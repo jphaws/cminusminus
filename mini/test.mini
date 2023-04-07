@@ -1,0 +1,4 @@
+fun main() void {
+   a = 1;
+   x.y.z = 999;
+}
