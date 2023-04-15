@@ -1,6 +1,8 @@
+github.com/alecthomas/repr v0.2.0 h1:HAzS41CIzNW5syS8Mf9UwXhNH1J9aix/BvDRf1Ml2Yk=
+github.com/alecthomas/repr v0.2.0/go.mod h1:Fr0507jx4eOXV7AlPV6AVZLYrLIuIeSOWtW57eE/O/4=
 github.com/antlr/antlr4/runtime/Go/antlr/v4 v4.0.0-20230321174746-8dcc6526cfb1 h1:X8MJ0fnN5FPdcGF5Ij2/OW+HgiJrRg3AfHAx1PJtIzM=
 github.com/antlr/antlr4/runtime/Go/antlr/v4 v4.0.0-20230321174746-8dcc6526cfb1/go.mod h1:pSwJ0fSY5KhvocuWSx4fz3BA8OrA1bQn+K1Eli3BRwM=
-github.com/keen-cp/compiler-project-c v0.0.0-20230405165047-924d8521a3e7 h1:47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=
-github.com/keen-cp/compiler-project-c v0.0.0-20230405165047-924d8521a3e7/go.mod h1:THxsVEOpQ+xTrFX6Nab2MbQme9uRJyZqtIyHjJOEbeY=
-golang.org/x/exp v0.0.0-20220722155223-a9213eeb770e h1:+WEEuIdZHnUeJJmEUjyYC2gfUMj69yZXw17EnHg/otA=
-golang.org/x/exp v0.0.0-20220722155223-a9213eeb770e/go.mod h1:Kr81I6Kryrl9sr8s2FK3vxD90NdsKWRuOIl2O4CvYbA=
+github.com/keen-cp/compiler-project-c/parser v0.0.0-20230414210539-3e8a0706ae0f h1:IbOfShuUiTadWmzqoo/10FqlTrCmpbDfZQ9U2klAigo=
+github.com/keen-cp/compiler-project-c/parser v0.0.0-20230414210539-3e8a0706ae0f/go.mod h1:kI5cZXarX5D7u9GI+GKq5lvksK7+aWtMT2aWwTC2Sag=
+golang.org/x/exp v0.0.0-20230321023759-10a507213a29 h1:ooxPy7fPvB4kwsA2h+iBNHkAbp/4JxTSwCmvdjEYmug=
+golang.org/x/exp v0.0.0-20230321023759-10a507213a29/go.mod h1:CxIveKay+FTh1D0yPZemJVgC/95VzuuOLq5Qi4xnoYc=
