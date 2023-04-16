@@ -1,6 +1,6 @@
 // Code generated from Mini.g4 by ANTLR 4.12.0. DO NOT EDIT.
 
-package parser // Mini
+package mantlr // Mini
 import "github.com/antlr/antlr4/runtime/Go/antlr/v4"
 
 // BaseMiniListener is a complete listener for a parse tree produced by MiniParser.

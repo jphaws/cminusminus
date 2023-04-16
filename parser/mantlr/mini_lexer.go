@@ -1,6 +1,6 @@
 // Code generated from Mini.g4 by ANTLR 4.12.0. DO NOT EDIT.
 
-package parser
+package mantlr
 
 import (
 	"fmt"

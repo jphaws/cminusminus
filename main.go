@@ -5,15 +5,16 @@ import (
 
 	"github.com/alecthomas/repr"
 	"github.com/antlr/antlr4/runtime/Go/antlr/v4"
+	"github.com/keen-cp/compiler-project-c/parser/mantlr"
 	"github.com/keen-cp/compiler-project-c/parser"
-	"github.com/keep-cp/compiler-project-c/ast"
+	"github.com/keen-cp/compiler-project-c/ast"
 )
 
 func main() {
 	input, _ := antlr.NewFileStream(os.Args[1])
-	lexer := parser.NewMiniLexer(input)
+	lexer := mantlr.NewMiniLexer(input)
 	stream := antlr.NewCommonTokenStream(lexer, 0)
-	p := parser.NewMiniParser(stream)
+	p := mantlr.NewMiniParser(stream)
 	p.AddErrorListener(antlr.NewDiagnosticErrorListener(true))
 	p.BuildParseTrees = true
 	prog := p.Program()
