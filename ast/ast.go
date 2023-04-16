@@ -31,9 +31,17 @@ type Type interface {
 type IntType struct {
 }
 
+func (i IntType) GoString() string {
+	return fmt.Sprintf("int")
+}
+
 func (i IntType) typeFunc() {}
 
 type BoolType struct {
+}
+
+func (b BoolType) GoString() string {
+	return fmt.Sprintf("bool")
 }
 
 func (b BoolType) typeFunc() {}
@@ -42,9 +50,17 @@ type StructType struct {
 	Id string
 }
 
+func (s StructType) GoString() string {
+	return fmt.Sprintf("struct %v", s.Id)
+}
+
 func (s StructType) typeFunc() {}
 
 type VoidType struct {
+}
+
+func (v VoidType) GoString() string {
+	return fmt.Sprintf("void")
 }
 
 func (v VoidType) typeFunc() {}
@@ -72,8 +88,8 @@ type BlockStatement struct {
 func (b BlockStatement) statementFunc() {}
 
 type AssignmentStatement struct {
-	Target   LValue
 	Position *Position
+	Target   LValue
 	Source   Expression
 }
 
@@ -130,9 +146,9 @@ type LValue interface {
 }
 
 type DotLValue struct {
-	Name     string
 	Position *Position
-	Right    LValue
+	Left     LValue
+	Name     string
 }
 
 func (d DotLValue) lValueFunc() {}
@@ -158,8 +174,8 @@ type BinaryLeftExpression interface {
 }
 
 type DotExpression struct {
-	Left     DotLeftExpression
 	Position *Position
+	Left     DotLeftExpression
 	Right    Expression
 }
 
