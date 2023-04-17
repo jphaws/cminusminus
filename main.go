@@ -5,9 +5,9 @@ import (
 
 	"github.com/alecthomas/repr"
 	"github.com/antlr/antlr4/runtime/Go/antlr/v4"
-	"github.com/keen-cp/compiler-project-c/parser/mantlr"
-	"github.com/keen-cp/compiler-project-c/parser"
 	"github.com/keen-cp/compiler-project-c/ast"
+	"github.com/keen-cp/compiler-project-c/parser"
+	"github.com/keen-cp/compiler-project-c/parser/mantlr"
 )
 
 func main() {

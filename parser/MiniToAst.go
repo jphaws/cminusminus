@@ -6,6 +6,8 @@ import (
 	"github.com/keen-cp/compiler-project-c/parser/mantlr"
 )
 
+// === Root ===
+
 // MiniToAst is the entry function for creating AST from ANTLR parse tree
 func MiniToAst(ctx mantlr.IProgramContext) ast.Root {
 	funcs := ctx.Functions().AllFunction()
@@ -32,21 +34,15 @@ func MiniToAst(ctx mantlr.IProgramContext) ast.Root {
 	}
 }
 
-func constructPosition(tok antlr.Token) *ast.Position {
-	return &ast.Position{
-		Line:   tok.GetLine(),
-		Column: tok.GetColumn(),
-	}
-}
-
+// === Type declarations ===
 func typeDeclarationsToAst(typeDecls []mantlr.ITypeDeclarationContext) []*ast.TypeDeclaration {
 	ret := make([]*ast.TypeDeclaration, len(typeDecls))
 
 	for i, v := range typeDecls {
 		ret[i] = &ast.TypeDeclaration{
+			Position: constructPosition(v.ID().GetSymbol()),
 			Id:       v.ID().GetText(),
 			Fields:   gatherFieldDeclaration(v.NestedDecl().AllDecl()),
-			Position: constructPosition(v.ID().GetSymbol()),
 		}
 	}
 
@@ -58,14 +54,16 @@ func gatherFieldDeclaration(decls []mantlr.IDeclContext) []*ast.Declaration {
 
 	for i, v := range decls {
 		ret[i] = &ast.Declaration{
-			Name: v.ID().GetText(),
-			Type: typeToAst(v.Type_()),
+			Position: constructPosition(v.ID().GetSymbol()),
+			Name:     v.ID().GetText(),
+			Type:     typeToAst(v.Type_()),
 		}
 	}
 
 	return ret
 }
 
+// === Types ===
 func typeToAst(typ mantlr.ITypeContext) ast.Type {
 	switch v := typ.(type) {
 	case *mantlr.IntTypeContext:
@@ -79,6 +77,7 @@ func typeToAst(typ mantlr.ITypeContext) ast.Type {
 	return nil
 }
 
+// === Declarations ===
 func declarationsToAst(declarations []mantlr.IDeclarationContext) []*ast.Declaration {
 	ret := make([]*ast.Declaration, 0, len(declarations))
 
@@ -97,21 +96,22 @@ func declarationsToAst(declarations []mantlr.IDeclarationContext) []*ast.Declara
 	return ret
 }
 
-func functionToAst(f mantlr.IFunctionContext, ch chan *ast.Function) {
-	name := f.ID().GetText()
-	params := paramsToAst(f.Parameters().AllDecl())
-	locals := declarationsToAst(f.Declarations().AllDeclaration())
-	body := bodyToAst(f.StatementList().AllStatement())
-	returnT := returnTypeToAst(f.ReturnType())
-	pos := constructPosition(f.GetStart())
+// === Functions ===
+func functionToAst(fn mantlr.IFunctionContext, ch chan *ast.Function) {
+	pos := constructPosition(fn.ID().GetSymbol())
+	name := fn.ID().GetText()
+	params := paramsToAst(fn.Parameters().AllDecl())
+	returnType := returnTypeToAst(fn.ReturnType())
+	locals := declarationsToAst(fn.Declarations().AllDeclaration())
+	body := bodyToAst(fn.StatementList().AllStatement())
 
 	ret := ast.Function{
+		Position:   pos,
 		Name:       name,
 		Parameters: params,
-		ReturnType: returnT,
+		ReturnType: returnType,
 		Locals:     locals,
 		Body:       body,
-		Position:   pos,
 	}
 
 	ch <- &ret
@@ -122,9 +122,9 @@ func paramsToAst(params []mantlr.IDeclContext) []*ast.Declaration {
 
 	for i, v := range params {
 		ret[i] = &ast.Declaration{
+			Position: constructPosition(v.ID().GetSymbol()),
 			Type:     typeToAst(v.Type_()),
 			Name:     v.ID().GetText(),
-			Position: constructPosition(v.GetStart()),
 		}
 	}
 
@@ -160,6 +160,7 @@ func bodyToAst(body []mantlr.IStatementContext) []ast.Statement {
 	return ret
 }
 
+// === Statements ===
 func statementToAst(stmt mantlr.IStatementContext) ast.Statement {
 	switch v := stmt.(type) {
 	case *mantlr.AssignmentContext:
@@ -186,9 +187,9 @@ func statementToAst(stmt mantlr.IStatementContext) ast.Statement {
 }
 
 func blockStatementToAst(block mantlr.IBlockContext) *ast.BlockStatement {
+	pos := constructPosition(block.GetStart())
 	blockStmts := block.StatementList().AllStatement()
 	stmts := make([]ast.Statement, len(blockStmts))
-	pos := constructPosition(block.GetStart())
 
 	for i, v := range blockStmts {
 		stmts[i] = statementToAst(v)
@@ -197,79 +198,6 @@ func blockStatementToAst(block mantlr.IBlockContext) *ast.BlockStatement {
 	return &ast.BlockStatement{
 		Position:   pos,
 		Statements: stmts,
-	}
-}
-
-func invocationStatementToAst(inv *mantlr.InvocationContext) *ast.InvocationStatement {
-	name := inv.ID().GetText()
-	args := make([]ast.Expression, len(inv.Arguments().AllExpression()))
-	pos := constructPosition(inv.GetStart())
-
-	for i, v := range inv.Arguments().AllExpression() {
-		args[i] = expressionToAst(v)
-	}
-
-	return &ast.InvocationStatement{
-		Expression: ast.InvocationExpression{
-			Position:  pos,
-			Name:      name,
-			Arguments: args,
-		},
-	}
-}
-
-func conditionalStatementToAst(fi *mantlr.ConditionalContext) *ast.IfStatement {
-	if fi.GetElseBlock() != nil {
-		return &ast.IfStatement{
-			Position: constructPosition(fi.GetStart()),
-			Guard:    expressionToAst(fi.Expression()),
-			Then:     blockStatementToAst(fi.GetThenBlock()),
-			Else:     blockStatementToAst(fi.GetElseBlock()),
-		}
-	}
-	return &ast.IfStatement{
-		Position: constructPosition(fi.GetStart()),
-		Guard:    expressionToAst(fi.Expression()),
-		Then:     blockStatementToAst(fi.GetThenBlock()),
-		Else:     nil,
-	}
-}
-
-func whileStatementToAst(whl *mantlr.WhileContext) *ast.WhileStatement {
-	return &ast.WhileStatement{
-		Position: constructPosition(whl.GetStart()),
-		Guard:    expressionToAst(whl.Expression()),
-		Body:     blockStatementToAst(whl.Block()),
-	}
-}
-
-func returnStatementToAst(ret *mantlr.ReturnContext) *ast.ReturnStatement {
-	return &ast.ReturnStatement{
-		Position:   constructPosition(ret.GetStart()),
-		Expression: expressionToAst(ret.Expression()),
-	}
-}
-
-func deleteStatementToAst(del *mantlr.DeleteContext) *ast.DeleteStatement {
-	return &ast.DeleteStatement{
-		Position:   constructPosition(del.GetStart()),
-		Expression: expressionToAst(del.Expression()),
-	}
-}
-
-func printStatementToAst(prnt *mantlr.PrintContext) *ast.PrintStatement {
-	return &ast.PrintStatement{
-		Position:   constructPosition(prnt.GetStart()),
-		Expression: expressionToAst(prnt.Expression()),
-		Newline:    false,
-	}
-}
-
-func printLnStatementToAst(prnt *mantlr.PrintLnContext) *ast.PrintStatement {
-	return &ast.PrintStatement{
-		Position:   constructPosition(prnt.GetStart()),
-		Expression: expressionToAst(prnt.Expression()),
-		Newline:    true,
 	}
 }
 
@@ -291,6 +219,81 @@ func assignmentStatementToAst(asgn *mantlr.AssignmentContext) *ast.AssignmentSta
 	}
 }
 
+func printStatementToAst(prnt *mantlr.PrintContext) *ast.PrintStatement {
+	return &ast.PrintStatement{
+		Position:   constructPosition(prnt.GetStart()),
+		Expression: expressionToAst(prnt.Expression()),
+		Newline:    false,
+	}
+}
+
+func printLnStatementToAst(prnt *mantlr.PrintLnContext) *ast.PrintStatement {
+	return &ast.PrintStatement{
+		Position:   constructPosition(prnt.GetStart()),
+		Expression: expressionToAst(prnt.Expression()),
+		Newline:    true,
+	}
+}
+
+func conditionalStatementToAst(fi *mantlr.ConditionalContext) *ast.IfStatement {
+	if fi.GetElseBlock() != nil {
+		return &ast.IfStatement{
+			Position: constructPosition(fi.GetStart()),
+			Guard:    expressionToAst(fi.Expression()),
+			Then:     blockStatementToAst(fi.GetThenBlock()),
+			Else:     blockStatementToAst(fi.GetElseBlock()),
+		}
+	}
+
+	return &ast.IfStatement{
+		Position: constructPosition(fi.GetStart()),
+		Guard:    expressionToAst(fi.Expression()),
+		Then:     blockStatementToAst(fi.GetThenBlock()),
+		Else:     nil,
+	}
+}
+
+func whileStatementToAst(whl *mantlr.WhileContext) *ast.WhileStatement {
+	return &ast.WhileStatement{
+		Position: constructPosition(whl.GetStart()),
+		Guard:    expressionToAst(whl.Expression()),
+		Body:     blockStatementToAst(whl.Block()),
+	}
+}
+
+func deleteStatementToAst(del *mantlr.DeleteContext) *ast.DeleteStatement {
+	return &ast.DeleteStatement{
+		Position:   constructPosition(del.GetStart()),
+		Expression: expressionToAst(del.Expression()),
+	}
+}
+
+func returnStatementToAst(ret *mantlr.ReturnContext) *ast.ReturnStatement {
+	return &ast.ReturnStatement{
+		Position:   constructPosition(ret.GetStart()),
+		Expression: expressionToAst(ret.Expression()),
+	}
+}
+
+func invocationStatementToAst(inv *mantlr.InvocationContext) *ast.InvocationStatement {
+	pos := constructPosition(inv.ID().GetSymbol())
+	name := inv.ID().GetText()
+	args := make([]ast.Expression, len(inv.Arguments().AllExpression()))
+
+	for i, v := range inv.Arguments().AllExpression() {
+		args[i] = expressionToAst(v)
+	}
+
+	return &ast.InvocationStatement{
+		Expression: ast.InvocationExpression{
+			Position:  pos,
+			Name:      name,
+			Arguments: args,
+		},
+	}
+}
+
+// === LValues ===
 func lValueToAst(lval mantlr.ILvalueContext) ast.LValue {
 	switch v := lval.(type) {
 	// Base case
@@ -310,7 +313,126 @@ func lValueToAst(lval mantlr.ILvalueContext) ast.LValue {
 	return nil
 }
 
-// TODO
+// === Expressions ===
 func expressionToAst(expr mantlr.IExpressionContext) ast.Expression {
+	switch v := expr.(type) {
+	case *mantlr.InvocationExprContext:
+		return invocationExpressionToAst(v)
+	case *mantlr.DotExprContext:
+		return dotExpressionToAst(v)
+	case *mantlr.UnaryExprContext:
+		return unaryExpressionToAst(v)
+	case *mantlr.BinaryExprContext:
+		return binaryExpressionToAst(v)
+	case *mantlr.IdentifierExprContext:
+		return identifierExpressionToAst(v)
+	case *mantlr.IntegerExprContext:
+		return integerExpressionToAst(v)
+	case *mantlr.TrueExprContext:
+		return trueExpressionToAst(v)
+	case *mantlr.FalseExprContext:
+		return falseExpressionToAst(v)
+	case *mantlr.NewExprContext:
+		return newExpressionToAst(v)
+	case *mantlr.NullExprContext:
+		return nullExpressionToAst(v)
+	case *mantlr.NestedExprContext:
+		return nestedExpressionToAst(v)
+	}
+
 	return nil
+}
+
+func invocationExpressionToAst(inv *mantlr.InvocationExprContext) *ast.InvocationExpression {
+	return &ast.InvocationExpression{
+		Position:  constructPosition(inv.ID().GetSymbol()),
+		Name:      inv.ID().GetText(),
+		Arguments: argumentsToAst(inv.Arguments().AllExpression()),
+	}
+}
+
+func dotExpressionToAst(dot *mantlr.DotExprContext) *ast.DotExpression {
+	return &ast.DotExpression{
+		Position: constructPosition(dot.ID().GetSymbol()),
+		Left:     expressionToAst(dot.Expression()),
+		Field:    dot.ID().GetText(),
+	}
+}
+
+func unaryExpressionToAst(unary *mantlr.UnaryExprContext) *ast.UnaryExpression {
+	return &ast.UnaryExpression{
+		Position: constructPosition(unary.GetStart()),
+		Operator: ast.Operator(unary.GetOp().GetText()),
+		Operand:  expressionToAst(unary.Expression()),
+	}
+}
+
+func binaryExpressionToAst(bin *mantlr.BinaryExprContext) *ast.BinaryExpression {
+	return &ast.BinaryExpression{
+		Position: constructPosition(bin.GetOp()),
+		Left:     expressionToAst(bin.GetLft()),
+		Operator: ast.Operator(bin.GetOp().GetText()),
+		Right:    expressionToAst(bin.GetRht()),
+	}
+}
+
+func identifierExpressionToAst(ident *mantlr.IdentifierExprContext) *ast.IdentifierExpression {
+	return &ast.IdentifierExpression{
+		Position: constructPosition(ident.GetStart()),
+		Name:     ident.ID().GetText(),
+	}
+}
+
+func integerExpressionToAst(intgr *mantlr.IntegerExprContext) *ast.IntExpression {
+	return &ast.IntExpression{
+		Position: constructPosition(intgr.GetStart()),
+		Value:    intgr.INTEGER().GetText(),
+	}
+}
+
+func trueExpressionToAst(tr *mantlr.TrueExprContext) *ast.TrueExpression {
+	return &ast.TrueExpression{
+		Position: constructPosition(tr.GetStart()),
+	}
+}
+
+func falseExpressionToAst(fls *mantlr.FalseExprContext) *ast.FalseExpression {
+	return &ast.FalseExpression{
+		Position: constructPosition(fls.GetStart()),
+	}
+}
+
+func newExpressionToAst(nw *mantlr.NewExprContext) *ast.NewExpression {
+	return &ast.NewExpression{
+		Position: constructPosition(nw.GetStart()),
+		Id:       nw.ID().GetText(),
+	}
+}
+
+func nullExpressionToAst(null *mantlr.NullExprContext) *ast.NullExpression {
+	return &ast.NullExpression{
+		Position: constructPosition(null.GetStart()),
+	}
+}
+
+func nestedExpressionToAst(nest *mantlr.NestedExprContext) ast.Expression {
+	return expressionToAst(nest.Expression())
+}
+
+func argumentsToAst(args []mantlr.IExpressionContext) []ast.Expression {
+	ret := make([]ast.Expression, len(args))
+
+	for i, v := range args {
+		ret[i] = expressionToAst(v)
+	}
+
+	return ret
+}
+
+// === Position ===
+func constructPosition(tok antlr.Token) *ast.Position {
+	return &ast.Position{
+		Line:   tok.GetLine(),
+		Column: tok.GetColumn() + 1,
+	}
 }

@@ -2,6 +2,7 @@ package ast // Mini
 
 import "fmt"
 
+// === Root ===
 type Root struct {
 	Types        []*TypeDeclaration
 	Declarations []*Declaration
@@ -16,7 +17,6 @@ type TypeDeclaration struct {
 }
 
 // === Declarations ===
-// TODO: Add comma support
 type Declaration struct {
 	Position *Position
 	Type     Type
@@ -28,8 +28,7 @@ type Type interface {
 	typeFunc()
 }
 
-type IntType struct {
-}
+type IntType struct{}
 
 func (i IntType) GoString() string {
 	return fmt.Sprintf("int")
@@ -37,8 +36,7 @@ func (i IntType) GoString() string {
 
 func (i IntType) typeFunc() {}
 
-type BoolType struct {
-}
+type BoolType struct{}
 
 func (b BoolType) GoString() string {
 	return fmt.Sprintf("bool")
@@ -56,8 +54,7 @@ func (s StructType) GoString() string {
 
 func (s StructType) typeFunc() {}
 
-type VoidType struct {
-}
+type VoidType struct{}
 
 func (v VoidType) GoString() string {
 	return fmt.Sprintf("void")
@@ -65,7 +62,7 @@ func (v VoidType) GoString() string {
 
 func (v VoidType) typeFunc() {}
 
-// === Function ===
+// === Functions ===
 type Function struct {
 	Position   *Position
 	Name       string
@@ -145,6 +142,13 @@ type LValue interface {
 	lValueFunc()
 }
 
+type NameLValue struct {
+	Position *Position
+	Name     string
+}
+
+func (n NameLValue) lValueFunc() {}
+
 type DotLValue struct {
 	Position *Position
 	Left     LValue
@@ -153,43 +157,10 @@ type DotLValue struct {
 
 func (d DotLValue) lValueFunc() {}
 
-type NameLValue struct {
-	Position *Position
-	Name     string
-}
-
-func (n NameLValue) lValueFunc() {}
-
 // === Expressions ===
 type Expression interface {
 	expressionFunc()
 }
-
-type DotLeftExpression interface {
-	dotLeftExpressionFunc()
-}
-
-type BinaryLeftExpression interface {
-	binaryLeftExpressionFunc()
-}
-
-type DotExpression struct {
-	Position *Position
-	Left     DotLeftExpression
-	Right    Expression
-}
-
-func (d DotExpression) expressionFunc()           {}
-func (d DotExpression) binaryLeftExpressionFunc() {}
-
-type BinaryExpression struct {
-	Left     BinaryLeftExpression
-	Operator string
-	Right    Expression
-}
-
-func (b BinaryExpression) expressionFunc()        {}
-func (b BinaryExpression) dotLeftExpressionFunc() {}
 
 type InvocationExpression struct {
 	Position  *Position
@@ -197,73 +168,105 @@ type InvocationExpression struct {
 	Arguments []Expression
 }
 
-func (i InvocationExpression) expressionFunc()           {}
-func (i InvocationExpression) dotLeftExpressionFunc()    {}
-func (i InvocationExpression) binaryLeftExpressionFunc() {}
+func (i InvocationExpression) expressionFunc() {}
 
-// TODO: Unary expression
-// TODO: Binary expression precedence
-// TODO: Nested expressions
-
-type ReadExpression struct {
+type DotExpression struct {
 	Position *Position
+	Left     Expression
+	Field    string
 }
 
-func (r ReadExpression) expressionFunc()           {}
-func (r ReadExpression) dotLeftExpressionFunc()    {}
-func (r ReadExpression) binaryLeftExpressionFunc() {}
+func (d DotExpression) expressionFunc() {}
 
-type IntExpression struct {
+type UnaryExpression struct {
 	Position *Position
-	Value    int
+	Operator Operator
+	Operand  Expression
 }
 
-func (i IntExpression) expressionFunc()           {}
-func (i IntExpression) dotLeftExpressionFunc()    {}
-func (i IntExpression) binaryLeftExpressionFunc() {}
+func (u UnaryExpression) expressionFunc() {}
 
-type TrueExpression struct {
+type BinaryExpression struct {
 	Position *Position
+	Left     Expression
+	Operator Operator
+	Right    Expression
 }
 
-func (t TrueExpression) expressionFunc()           {}
-func (t TrueExpression) dotLeftExpressionFunc()    {}
-func (t TrueExpression) binaryLeftExpressionFunc() {}
-
-type FalseExpression struct {
-	Position *Position
-}
-
-func (f FalseExpression) expressionFunc()           {}
-func (f FalseExpression) dotLeftExpressionFunc()    {}
-func (f FalseExpression) binaryLeftExpressionFunc() {}
-
-type NewExpression struct {
-	Position *Position
-	Id       string
-}
-
-func (n NewExpression) expressionFunc()           {}
-func (n NewExpression) dotLeftExpressionFunc()    {}
-func (n NewExpression) binaryLeftExpressionFunc() {}
-
-type NullExpression struct {
-	Position *Position
-}
-
-func (n NullExpression) expressionFunc()           {}
-func (n NullExpression) dotLeftExpressionFunc()    {}
-func (n NullExpression) binaryLeftExpressionFunc() {}
+func (b BinaryExpression) expressionFunc() {}
 
 type IdentifierExpression struct {
 	Position *Position
 	Name     string
 }
 
-func (i IdentifierExpression) expressionFunc()           {}
-func (i IdentifierExpression) dotLeftExpressionFunc()    {}
-func (i IdentifierExpression) binaryLeftExpressionFunc() {}
+func (i IdentifierExpression) expressionFunc() {}
 
+type IntExpression struct {
+	Position *Position
+	Value    string
+}
+
+func (i IntExpression) expressionFunc() {}
+
+type ReadExpression struct {
+	Position *Position
+}
+
+func (r ReadExpression) expressionFunc() {}
+
+type TrueExpression struct {
+	Position *Position
+}
+
+func (t TrueExpression) expressionFunc() {}
+
+type FalseExpression struct {
+	Position *Position
+}
+
+func (f FalseExpression) expressionFunc() {}
+
+type NewExpression struct {
+	Position *Position
+	Id       string
+}
+
+func (n NewExpression) expressionFunc() {}
+
+type NullExpression struct {
+	Position *Position
+}
+
+func (n NullExpression) expressionFunc() {}
+
+// === Operators ===
+type Operator string
+
+const (
+	// Unary
+	NotOperator Operator = "!"
+
+	// Binary
+	TimesOperator        = "*"
+	DivideOperator       = "/"
+	PlusOperator         = "+"
+	MinusOperator        = "-" // Also unary
+	LessThanOperator     = "<"
+	GreaterThanOperator  = ">"
+	LessEqualOperator    = "<="
+	GreaterEqualOperator = ">="
+	EqualOperator        = "=="
+	NotEqualOperator     = "!="
+	AndOperator          = "&&"
+	OrOperator           = "||"
+)
+
+func (o Operator) GoString() string {
+	return string(o)
+}
+
+// === Position ===
 type Position struct {
 	Line   int
 	Column int
