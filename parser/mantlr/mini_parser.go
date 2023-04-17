@@ -373,18 +373,6 @@ func (s *ProgramContext) ToStringTree(ruleNames []string, recog antlr.Recognizer
 	return antlr.TreesStringTree(s, ruleNames, recog)
 }
 
-func (s *ProgramContext) EnterRule(listener antlr.ParseTreeListener) {
-	if listenerT, ok := listener.(MiniListener); ok {
-		listenerT.EnterProgram(s)
-	}
-}
-
-func (s *ProgramContext) ExitRule(listener antlr.ParseTreeListener) {
-	if listenerT, ok := listener.(MiniListener); ok {
-		listenerT.ExitProgram(s)
-	}
-}
-
 func (p *MiniParser) Program() (localctx IProgramContext) {
 	this := p
 	_ = this
@@ -520,18 +508,6 @@ func (s *TypesContext) ToStringTree(ruleNames []string, recog antlr.Recognizer) 
 	return antlr.TreesStringTree(s, ruleNames, recog)
 }
 
-func (s *TypesContext) EnterRule(listener antlr.ParseTreeListener) {
-	if listenerT, ok := listener.(MiniListener); ok {
-		listenerT.EnterTypes(s)
-	}
-}
-
-func (s *TypesContext) ExitRule(listener antlr.ParseTreeListener) {
-	if listenerT, ok := listener.(MiniListener); ok {
-		listenerT.ExitTypes(s)
-	}
-}
-
 func (p *MiniParser) Types() (localctx ITypesContext) {
 	this := p
 	_ = this
@@ -655,18 +631,6 @@ func (s *TypeDeclarationContext) GetRuleContext() antlr.RuleContext {
 
 func (s *TypeDeclarationContext) ToStringTree(ruleNames []string, recog antlr.Recognizer) string {
 	return antlr.TreesStringTree(s, ruleNames, recog)
-}
-
-func (s *TypeDeclarationContext) EnterRule(listener antlr.ParseTreeListener) {
-	if listenerT, ok := listener.(MiniListener); ok {
-		listenerT.EnterTypeDeclaration(s)
-	}
-}
-
-func (s *TypeDeclarationContext) ExitRule(listener antlr.ParseTreeListener) {
-	if listenerT, ok := listener.(MiniListener); ok {
-		listenerT.ExitTypeDeclaration(s)
-	}
 }
 
 func (p *MiniParser) TypeDeclaration() (localctx ITypeDeclarationContext) {
@@ -812,18 +776,6 @@ func (s *NestedDeclContext) ToStringTree(ruleNames []string, recog antlr.Recogni
 	return antlr.TreesStringTree(s, ruleNames, recog)
 }
 
-func (s *NestedDeclContext) EnterRule(listener antlr.ParseTreeListener) {
-	if listenerT, ok := listener.(MiniListener); ok {
-		listenerT.EnterNestedDecl(s)
-	}
-}
-
-func (s *NestedDeclContext) ExitRule(listener antlr.ParseTreeListener) {
-	if listenerT, ok := listener.(MiniListener); ok {
-		listenerT.ExitNestedDecl(s)
-	}
-}
-
 func (p *MiniParser) NestedDecl() (localctx INestedDeclContext) {
 	this := p
 	_ = this
@@ -941,18 +893,6 @@ func (s *DeclContext) ToStringTree(ruleNames []string, recog antlr.Recognizer) s
 	return antlr.TreesStringTree(s, ruleNames, recog)
 }
 
-func (s *DeclContext) EnterRule(listener antlr.ParseTreeListener) {
-	if listenerT, ok := listener.(MiniListener); ok {
-		listenerT.EnterDecl(s)
-	}
-}
-
-func (s *DeclContext) ExitRule(listener antlr.ParseTreeListener) {
-	if listenerT, ok := listener.(MiniListener); ok {
-		listenerT.ExitDecl(s)
-	}
-}
-
 func (p *MiniParser) Decl() (localctx IDeclContext) {
 	this := p
 	_ = this
@@ -1056,18 +996,6 @@ func (s *BoolTypeContext) GetRuleContext() antlr.RuleContext {
 	return s
 }
 
-func (s *BoolTypeContext) EnterRule(listener antlr.ParseTreeListener) {
-	if listenerT, ok := listener.(MiniListener); ok {
-		listenerT.EnterBoolType(s)
-	}
-}
-
-func (s *BoolTypeContext) ExitRule(listener antlr.ParseTreeListener) {
-	if listenerT, ok := listener.(MiniListener); ok {
-		listenerT.ExitBoolType(s)
-	}
-}
-
 type StructTypeContext struct {
 	*TypeContext
 }
@@ -1090,18 +1018,6 @@ func (s *StructTypeContext) ID() antlr.TerminalNode {
 	return s.GetToken(MiniParserID, 0)
 }
 
-func (s *StructTypeContext) EnterRule(listener antlr.ParseTreeListener) {
-	if listenerT, ok := listener.(MiniListener); ok {
-		listenerT.EnterStructType(s)
-	}
-}
-
-func (s *StructTypeContext) ExitRule(listener antlr.ParseTreeListener) {
-	if listenerT, ok := listener.(MiniListener); ok {
-		listenerT.ExitStructType(s)
-	}
-}
-
 type IntTypeContext struct {
 	*TypeContext
 }
@@ -1118,18 +1034,6 @@ func NewIntTypeContext(parser antlr.Parser, ctx antlr.ParserRuleContext) *IntTyp
 
 func (s *IntTypeContext) GetRuleContext() antlr.RuleContext {
 	return s
-}
-
-func (s *IntTypeContext) EnterRule(listener antlr.ParseTreeListener) {
-	if listenerT, ok := listener.(MiniListener); ok {
-		listenerT.EnterIntType(s)
-	}
-}
-
-func (s *IntTypeContext) ExitRule(listener antlr.ParseTreeListener) {
-	if listenerT, ok := listener.(MiniListener); ok {
-		listenerT.ExitIntType(s)
-	}
 }
 
 func (p *MiniParser) Type_() (localctx ITypeContext) {
@@ -1285,18 +1189,6 @@ func (s *DeclarationsContext) ToStringTree(ruleNames []string, recog antlr.Recog
 	return antlr.TreesStringTree(s, ruleNames, recog)
 }
 
-func (s *DeclarationsContext) EnterRule(listener antlr.ParseTreeListener) {
-	if listenerT, ok := listener.(MiniListener); ok {
-		listenerT.EnterDeclarations(s)
-	}
-}
-
-func (s *DeclarationsContext) ExitRule(listener antlr.ParseTreeListener) {
-	if listenerT, ok := listener.(MiniListener); ok {
-		listenerT.ExitDeclarations(s)
-	}
-}
-
 func (p *MiniParser) Declarations() (localctx IDeclarationsContext) {
 	this := p
 	_ = this
@@ -1413,18 +1305,6 @@ func (s *DeclarationContext) GetRuleContext() antlr.RuleContext {
 
 func (s *DeclarationContext) ToStringTree(ruleNames []string, recog antlr.Recognizer) string {
 	return antlr.TreesStringTree(s, ruleNames, recog)
-}
-
-func (s *DeclarationContext) EnterRule(listener antlr.ParseTreeListener) {
-	if listenerT, ok := listener.(MiniListener); ok {
-		listenerT.EnterDeclaration(s)
-	}
-}
-
-func (s *DeclarationContext) ExitRule(listener antlr.ParseTreeListener) {
-	if listenerT, ok := listener.(MiniListener); ok {
-		listenerT.ExitDeclaration(s)
-	}
 }
 
 func (p *MiniParser) Declaration() (localctx IDeclarationContext) {
@@ -1575,18 +1455,6 @@ func (s *FunctionsContext) GetRuleContext() antlr.RuleContext {
 
 func (s *FunctionsContext) ToStringTree(ruleNames []string, recog antlr.Recognizer) string {
 	return antlr.TreesStringTree(s, ruleNames, recog)
-}
-
-func (s *FunctionsContext) EnterRule(listener antlr.ParseTreeListener) {
-	if listenerT, ok := listener.(MiniListener); ok {
-		listenerT.EnterFunctions(s)
-	}
-}
-
-func (s *FunctionsContext) ExitRule(listener antlr.ParseTreeListener) {
-	if listenerT, ok := listener.(MiniListener); ok {
-		listenerT.ExitFunctions(s)
-	}
 }
 
 func (p *MiniParser) Functions() (localctx IFunctionsContext) {
@@ -1753,18 +1621,6 @@ func (s *FunctionContext) ToStringTree(ruleNames []string, recog antlr.Recognize
 	return antlr.TreesStringTree(s, ruleNames, recog)
 }
 
-func (s *FunctionContext) EnterRule(listener antlr.ParseTreeListener) {
-	if listenerT, ok := listener.(MiniListener); ok {
-		listenerT.EnterFunction(s)
-	}
-}
-
-func (s *FunctionContext) ExitRule(listener antlr.ParseTreeListener) {
-	if listenerT, ok := listener.(MiniListener); ok {
-		listenerT.ExitFunction(s)
-	}
-}
-
 func (p *MiniParser) Function() (localctx IFunctionContext) {
 	this := p
 	_ = this
@@ -1916,18 +1772,6 @@ func (s *ParametersContext) ToStringTree(ruleNames []string, recog antlr.Recogni
 	return antlr.TreesStringTree(s, ruleNames, recog)
 }
 
-func (s *ParametersContext) EnterRule(listener antlr.ParseTreeListener) {
-	if listenerT, ok := listener.(MiniListener); ok {
-		listenerT.EnterParameters(s)
-	}
-}
-
-func (s *ParametersContext) ExitRule(listener antlr.ParseTreeListener) {
-	if listenerT, ok := listener.(MiniListener); ok {
-		listenerT.ExitParameters(s)
-	}
-}
-
 func (p *MiniParser) Parameters() (localctx IParametersContext) {
 	this := p
 	_ = this
@@ -2061,18 +1905,6 @@ func (s *ReturnTypeVoidContext) GetRuleContext() antlr.RuleContext {
 	return s
 }
 
-func (s *ReturnTypeVoidContext) EnterRule(listener antlr.ParseTreeListener) {
-	if listenerT, ok := listener.(MiniListener); ok {
-		listenerT.EnterReturnTypeVoid(s)
-	}
-}
-
-func (s *ReturnTypeVoidContext) ExitRule(listener antlr.ParseTreeListener) {
-	if listenerT, ok := listener.(MiniListener); ok {
-		listenerT.ExitReturnTypeVoid(s)
-	}
-}
-
 type ReturnTypeRealContext struct {
 	*ReturnTypeContext
 }
@@ -2105,18 +1937,6 @@ func (s *ReturnTypeRealContext) Type_() ITypeContext {
 	}
 
 	return t.(ITypeContext)
-}
-
-func (s *ReturnTypeRealContext) EnterRule(listener antlr.ParseTreeListener) {
-	if listenerT, ok := listener.(MiniListener); ok {
-		listenerT.EnterReturnTypeReal(s)
-	}
-}
-
-func (s *ReturnTypeRealContext) ExitRule(listener antlr.ParseTreeListener) {
-	if listenerT, ok := listener.(MiniListener); ok {
-		listenerT.ExitReturnTypeReal(s)
-	}
 }
 
 func (p *MiniParser) ReturnType() (localctx IReturnTypeContext) {
@@ -2268,18 +2088,6 @@ func (s *AssignmentContext) Expression() IExpressionContext {
 	return t.(IExpressionContext)
 }
 
-func (s *AssignmentContext) EnterRule(listener antlr.ParseTreeListener) {
-	if listenerT, ok := listener.(MiniListener); ok {
-		listenerT.EnterAssignment(s)
-	}
-}
-
-func (s *AssignmentContext) ExitRule(listener antlr.ParseTreeListener) {
-	if listenerT, ok := listener.(MiniListener); ok {
-		listenerT.ExitAssignment(s)
-	}
-}
-
 type DeleteContext struct {
 	*StatementContext
 }
@@ -2312,18 +2120,6 @@ func (s *DeleteContext) Expression() IExpressionContext {
 	}
 
 	return t.(IExpressionContext)
-}
-
-func (s *DeleteContext) EnterRule(listener antlr.ParseTreeListener) {
-	if listenerT, ok := listener.(MiniListener); ok {
-		listenerT.EnterDelete(s)
-	}
-}
-
-func (s *DeleteContext) ExitRule(listener antlr.ParseTreeListener) {
-	if listenerT, ok := listener.(MiniListener); ok {
-		listenerT.ExitDelete(s)
-	}
 }
 
 type PrintContext struct {
@@ -2360,18 +2156,6 @@ func (s *PrintContext) Expression() IExpressionContext {
 	return t.(IExpressionContext)
 }
 
-func (s *PrintContext) EnterRule(listener antlr.ParseTreeListener) {
-	if listenerT, ok := listener.(MiniListener); ok {
-		listenerT.EnterPrint(s)
-	}
-}
-
-func (s *PrintContext) ExitRule(listener antlr.ParseTreeListener) {
-	if listenerT, ok := listener.(MiniListener); ok {
-		listenerT.ExitPrint(s)
-	}
-}
-
 type ReturnContext struct {
 	*StatementContext
 }
@@ -2404,18 +2188,6 @@ func (s *ReturnContext) Expression() IExpressionContext {
 	}
 
 	return t.(IExpressionContext)
-}
-
-func (s *ReturnContext) EnterRule(listener antlr.ParseTreeListener) {
-	if listenerT, ok := listener.(MiniListener); ok {
-		listenerT.EnterReturn(s)
-	}
-}
-
-func (s *ReturnContext) ExitRule(listener antlr.ParseTreeListener) {
-	if listenerT, ok := listener.(MiniListener); ok {
-		listenerT.ExitReturn(s)
-	}
 }
 
 type InvocationContext struct {
@@ -2456,18 +2228,6 @@ func (s *InvocationContext) Arguments() IArgumentsContext {
 	return t.(IArgumentsContext)
 }
 
-func (s *InvocationContext) EnterRule(listener antlr.ParseTreeListener) {
-	if listenerT, ok := listener.(MiniListener); ok {
-		listenerT.EnterInvocation(s)
-	}
-}
-
-func (s *InvocationContext) ExitRule(listener antlr.ParseTreeListener) {
-	if listenerT, ok := listener.(MiniListener); ok {
-		listenerT.ExitInvocation(s)
-	}
-}
-
 type PrintLnContext struct {
 	*StatementContext
 }
@@ -2500,18 +2260,6 @@ func (s *PrintLnContext) Expression() IExpressionContext {
 	}
 
 	return t.(IExpressionContext)
-}
-
-func (s *PrintLnContext) EnterRule(listener antlr.ParseTreeListener) {
-	if listenerT, ok := listener.(MiniListener); ok {
-		listenerT.EnterPrintLn(s)
-	}
-}
-
-func (s *PrintLnContext) ExitRule(listener antlr.ParseTreeListener) {
-	if listenerT, ok := listener.(MiniListener); ok {
-		listenerT.ExitPrintLn(s)
-	}
 }
 
 type ConditionalContext struct {
@@ -2599,18 +2347,6 @@ func (s *ConditionalContext) Block(i int) IBlockContext {
 	return t.(IBlockContext)
 }
 
-func (s *ConditionalContext) EnterRule(listener antlr.ParseTreeListener) {
-	if listenerT, ok := listener.(MiniListener); ok {
-		listenerT.EnterConditional(s)
-	}
-}
-
-func (s *ConditionalContext) ExitRule(listener antlr.ParseTreeListener) {
-	if listenerT, ok := listener.(MiniListener); ok {
-		listenerT.ExitConditional(s)
-	}
-}
-
 type NestedBlockContext struct {
 	*StatementContext
 }
@@ -2643,18 +2379,6 @@ func (s *NestedBlockContext) Block() IBlockContext {
 	}
 
 	return t.(IBlockContext)
-}
-
-func (s *NestedBlockContext) EnterRule(listener antlr.ParseTreeListener) {
-	if listenerT, ok := listener.(MiniListener); ok {
-		listenerT.EnterNestedBlock(s)
-	}
-}
-
-func (s *NestedBlockContext) ExitRule(listener antlr.ParseTreeListener) {
-	if listenerT, ok := listener.(MiniListener); ok {
-		listenerT.ExitNestedBlock(s)
-	}
 }
 
 type WhileContext struct {
@@ -2705,18 +2429,6 @@ func (s *WhileContext) Block() IBlockContext {
 	}
 
 	return t.(IBlockContext)
-}
-
-func (s *WhileContext) EnterRule(listener antlr.ParseTreeListener) {
-	if listenerT, ok := listener.(MiniListener); ok {
-		listenerT.EnterWhile(s)
-	}
-}
-
-func (s *WhileContext) ExitRule(listener antlr.ParseTreeListener) {
-	if listenerT, ok := listener.(MiniListener); ok {
-		listenerT.ExitWhile(s)
-	}
 }
 
 func (p *MiniParser) Statement() (localctx IStatementContext) {
@@ -3027,18 +2739,6 @@ func (s *BlockContext) ToStringTree(ruleNames []string, recog antlr.Recognizer) 
 	return antlr.TreesStringTree(s, ruleNames, recog)
 }
 
-func (s *BlockContext) EnterRule(listener antlr.ParseTreeListener) {
-	if listenerT, ok := listener.(MiniListener); ok {
-		listenerT.EnterBlock(s)
-	}
-}
-
-func (s *BlockContext) ExitRule(listener antlr.ParseTreeListener) {
-	if listenerT, ok := listener.(MiniListener); ok {
-		listenerT.ExitBlock(s)
-	}
-}
-
 func (p *MiniParser) Block() (localctx IBlockContext) {
 	this := p
 	_ = this
@@ -3170,18 +2870,6 @@ func (s *StatementListContext) ToStringTree(ruleNames []string, recog antlr.Reco
 	return antlr.TreesStringTree(s, ruleNames, recog)
 }
 
-func (s *StatementListContext) EnterRule(listener antlr.ParseTreeListener) {
-	if listenerT, ok := listener.(MiniListener); ok {
-		listenerT.EnterStatementList(s)
-	}
-}
-
-func (s *StatementListContext) ExitRule(listener antlr.ParseTreeListener) {
-	if listenerT, ok := listener.(MiniListener); ok {
-		listenerT.ExitStatementList(s)
-	}
-}
-
 func (p *MiniParser) StatementList() (localctx IStatementListContext) {
 	this := p
 	_ = this
@@ -3296,18 +2984,6 @@ func (s *LvalueIdContext) ID() antlr.TerminalNode {
 	return s.GetToken(MiniParserID, 0)
 }
 
-func (s *LvalueIdContext) EnterRule(listener antlr.ParseTreeListener) {
-	if listenerT, ok := listener.(MiniListener); ok {
-		listenerT.EnterLvalueId(s)
-	}
-}
-
-func (s *LvalueIdContext) ExitRule(listener antlr.ParseTreeListener) {
-	if listenerT, ok := listener.(MiniListener); ok {
-		listenerT.ExitLvalueId(s)
-	}
-}
-
 type LvalueDotContext struct {
 	*LvalueContext
 }
@@ -3344,18 +3020,6 @@ func (s *LvalueDotContext) Lvalue() ILvalueContext {
 
 func (s *LvalueDotContext) ID() antlr.TerminalNode {
 	return s.GetToken(MiniParserID, 0)
-}
-
-func (s *LvalueDotContext) EnterRule(listener antlr.ParseTreeListener) {
-	if listenerT, ok := listener.(MiniListener); ok {
-		listenerT.EnterLvalueDot(s)
-	}
-}
-
-func (s *LvalueDotContext) ExitRule(listener antlr.ParseTreeListener) {
-	if listenerT, ok := listener.(MiniListener); ok {
-		listenerT.ExitLvalueDot(s)
-	}
 }
 
 func (p *MiniParser) Lvalue() (localctx ILvalueContext) {
@@ -3509,18 +3173,6 @@ func (s *IntegerExprContext) INTEGER() antlr.TerminalNode {
 	return s.GetToken(MiniParserINTEGER, 0)
 }
 
-func (s *IntegerExprContext) EnterRule(listener antlr.ParseTreeListener) {
-	if listenerT, ok := listener.(MiniListener); ok {
-		listenerT.EnterIntegerExpr(s)
-	}
-}
-
-func (s *IntegerExprContext) ExitRule(listener antlr.ParseTreeListener) {
-	if listenerT, ok := listener.(MiniListener); ok {
-		listenerT.ExitIntegerExpr(s)
-	}
-}
-
 type TrueExprContext struct {
 	*ExpressionContext
 }
@@ -3537,18 +3189,6 @@ func NewTrueExprContext(parser antlr.Parser, ctx antlr.ParserRuleContext) *TrueE
 
 func (s *TrueExprContext) GetRuleContext() antlr.RuleContext {
 	return s
-}
-
-func (s *TrueExprContext) EnterRule(listener antlr.ParseTreeListener) {
-	if listenerT, ok := listener.(MiniListener); ok {
-		listenerT.EnterTrueExpr(s)
-	}
-}
-
-func (s *TrueExprContext) ExitRule(listener antlr.ParseTreeListener) {
-	if listenerT, ok := listener.(MiniListener); ok {
-		listenerT.ExitTrueExpr(s)
-	}
 }
 
 type IdentifierExprContext struct {
@@ -3571,18 +3211,6 @@ func (s *IdentifierExprContext) GetRuleContext() antlr.RuleContext {
 
 func (s *IdentifierExprContext) ID() antlr.TerminalNode {
 	return s.GetToken(MiniParserID, 0)
-}
-
-func (s *IdentifierExprContext) EnterRule(listener antlr.ParseTreeListener) {
-	if listenerT, ok := listener.(MiniListener); ok {
-		listenerT.EnterIdentifierExpr(s)
-	}
-}
-
-func (s *IdentifierExprContext) ExitRule(listener antlr.ParseTreeListener) {
-	if listenerT, ok := listener.(MiniListener); ok {
-		listenerT.ExitIdentifierExpr(s)
-	}
 }
 
 type BinaryExprContext struct {
@@ -3659,18 +3287,6 @@ func (s *BinaryExprContext) Expression(i int) IExpressionContext {
 	return t.(IExpressionContext)
 }
 
-func (s *BinaryExprContext) EnterRule(listener antlr.ParseTreeListener) {
-	if listenerT, ok := listener.(MiniListener); ok {
-		listenerT.EnterBinaryExpr(s)
-	}
-}
-
-func (s *BinaryExprContext) ExitRule(listener antlr.ParseTreeListener) {
-	if listenerT, ok := listener.(MiniListener); ok {
-		listenerT.ExitBinaryExpr(s)
-	}
-}
-
 type NewExprContext struct {
 	*ExpressionContext
 }
@@ -3691,18 +3307,6 @@ func (s *NewExprContext) GetRuleContext() antlr.RuleContext {
 
 func (s *NewExprContext) ID() antlr.TerminalNode {
 	return s.GetToken(MiniParserID, 0)
-}
-
-func (s *NewExprContext) EnterRule(listener antlr.ParseTreeListener) {
-	if listenerT, ok := listener.(MiniListener); ok {
-		listenerT.EnterNewExpr(s)
-	}
-}
-
-func (s *NewExprContext) ExitRule(listener antlr.ParseTreeListener) {
-	if listenerT, ok := listener.(MiniListener); ok {
-		listenerT.ExitNewExpr(s)
-	}
 }
 
 type NestedExprContext struct {
@@ -3737,18 +3341,6 @@ func (s *NestedExprContext) Expression() IExpressionContext {
 	}
 
 	return t.(IExpressionContext)
-}
-
-func (s *NestedExprContext) EnterRule(listener antlr.ParseTreeListener) {
-	if listenerT, ok := listener.(MiniListener); ok {
-		listenerT.EnterNestedExpr(s)
-	}
-}
-
-func (s *NestedExprContext) ExitRule(listener antlr.ParseTreeListener) {
-	if listenerT, ok := listener.(MiniListener); ok {
-		listenerT.ExitNestedExpr(s)
-	}
 }
 
 type DotExprContext struct {
@@ -3787,18 +3379,6 @@ func (s *DotExprContext) Expression() IExpressionContext {
 
 func (s *DotExprContext) ID() antlr.TerminalNode {
 	return s.GetToken(MiniParserID, 0)
-}
-
-func (s *DotExprContext) EnterRule(listener antlr.ParseTreeListener) {
-	if listenerT, ok := listener.(MiniListener); ok {
-		listenerT.EnterDotExpr(s)
-	}
-}
-
-func (s *DotExprContext) ExitRule(listener antlr.ParseTreeListener) {
-	if listenerT, ok := listener.(MiniListener); ok {
-		listenerT.ExitDotExpr(s)
-	}
 }
 
 type UnaryExprContext struct {
@@ -3840,18 +3420,6 @@ func (s *UnaryExprContext) Expression() IExpressionContext {
 	return t.(IExpressionContext)
 }
 
-func (s *UnaryExprContext) EnterRule(listener antlr.ParseTreeListener) {
-	if listenerT, ok := listener.(MiniListener); ok {
-		listenerT.EnterUnaryExpr(s)
-	}
-}
-
-func (s *UnaryExprContext) ExitRule(listener antlr.ParseTreeListener) {
-	if listenerT, ok := listener.(MiniListener); ok {
-		listenerT.ExitUnaryExpr(s)
-	}
-}
-
 type InvocationExprContext struct {
 	*ExpressionContext
 }
@@ -3890,18 +3458,6 @@ func (s *InvocationExprContext) Arguments() IArgumentsContext {
 	return t.(IArgumentsContext)
 }
 
-func (s *InvocationExprContext) EnterRule(listener antlr.ParseTreeListener) {
-	if listenerT, ok := listener.(MiniListener); ok {
-		listenerT.EnterInvocationExpr(s)
-	}
-}
-
-func (s *InvocationExprContext) ExitRule(listener antlr.ParseTreeListener) {
-	if listenerT, ok := listener.(MiniListener); ok {
-		listenerT.ExitInvocationExpr(s)
-	}
-}
-
 type FalseExprContext struct {
 	*ExpressionContext
 }
@@ -3920,18 +3476,6 @@ func (s *FalseExprContext) GetRuleContext() antlr.RuleContext {
 	return s
 }
 
-func (s *FalseExprContext) EnterRule(listener antlr.ParseTreeListener) {
-	if listenerT, ok := listener.(MiniListener); ok {
-		listenerT.EnterFalseExpr(s)
-	}
-}
-
-func (s *FalseExprContext) ExitRule(listener antlr.ParseTreeListener) {
-	if listenerT, ok := listener.(MiniListener); ok {
-		listenerT.ExitFalseExpr(s)
-	}
-}
-
 type NullExprContext struct {
 	*ExpressionContext
 }
@@ -3948,18 +3492,6 @@ func NewNullExprContext(parser antlr.Parser, ctx antlr.ParserRuleContext) *NullE
 
 func (s *NullExprContext) GetRuleContext() antlr.RuleContext {
 	return s
-}
-
-func (s *NullExprContext) EnterRule(listener antlr.ParseTreeListener) {
-	if listenerT, ok := listener.(MiniListener); ok {
-		listenerT.EnterNullExpr(s)
-	}
-}
-
-func (s *NullExprContext) ExitRule(listener antlr.ParseTreeListener) {
-	if listenerT, ok := listener.(MiniListener); ok {
-		listenerT.ExitNullExpr(s)
-	}
 }
 
 func (p *MiniParser) Expression() (localctx IExpressionContext) {
@@ -4452,18 +3984,6 @@ func (s *ArgumentsContext) GetRuleContext() antlr.RuleContext {
 
 func (s *ArgumentsContext) ToStringTree(ruleNames []string, recog antlr.Recognizer) string {
 	return antlr.TreesStringTree(s, ruleNames, recog)
-}
-
-func (s *ArgumentsContext) EnterRule(listener antlr.ParseTreeListener) {
-	if listenerT, ok := listener.(MiniListener); ok {
-		listenerT.EnterArguments(s)
-	}
-}
-
-func (s *ArgumentsContext) ExitRule(listener antlr.ParseTreeListener) {
-	if listenerT, ok := listener.(MiniListener); ok {
-		listenerT.ExitArguments(s)
-	}
 }
 
 func (p *MiniParser) Arguments() (localctx IArgumentsContext) {
