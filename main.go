@@ -1,9 +1,10 @@
 package main
 
 import (
+	"fmt"
 	"os"
 
-	"github.com/alecthomas/repr"
+	// "github.com/alecthomas/repr"
 	"github.com/antlr/antlr4/runtime/Go/antlr/v4"
 	"github.com/keen-cp/compiler-project-c/ast"
 	"github.com/keen-cp/compiler-project-c/parser"
@@ -19,7 +20,19 @@ func main() {
 	p.BuildParseTrees = true
 	prog := p.Program()
 
-	var mr ast.Root
-	mr = parser.MiniToAst(prog)
-	repr.Println(mr, repr.Indent("   "))
+	root := parser.MiniToAst(prog)
+	/*
+		fmt.Println("===== AST =====")
+		repr.Println(root, repr.Indent("   "))
+	*/
+
+	err := ast.TypeCheck(&root)
+	/*
+		fmt.Println("===== Struct table =====")
+		repr.Println(ast.StructTable)
+		fmt.Println("\n===== Symbol table =====")
+		repr.Println(ast.SymbolTable)
+		fmt.Println("\n===== Errors =====")
+	*/
+	fmt.Println(err)
 }

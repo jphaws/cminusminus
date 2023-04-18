@@ -25,7 +25,7 @@ type Declaration struct {
 
 // === Types ===
 type Type interface {
-	typeFunc()
+	canConvertTo(t Type) bool
 }
 
 type IntType struct{}
@@ -34,7 +34,16 @@ func (i IntType) GoString() string {
 	return fmt.Sprintf("int")
 }
 
-func (i IntType) typeFunc() {}
+func (i IntType) canConvertTo(t Type) bool {
+	switch t.(type) {
+	case *IntType:
+		return true
+	case *ErrorType:
+		return true
+	}
+
+	return false
+}
 
 type BoolType struct{}
 
@@ -42,7 +51,16 @@ func (b BoolType) GoString() string {
 	return fmt.Sprintf("bool")
 }
 
-func (b BoolType) typeFunc() {}
+func (b BoolType) canConvertTo(t Type) bool {
+	switch t.(type) {
+	case *BoolType:
+		return true
+	case *ErrorType:
+		return true
+	}
+
+	return false
+}
 
 type StructType struct {
 	Id string
@@ -52,7 +70,16 @@ func (s StructType) GoString() string {
 	return fmt.Sprintf("struct %v", s.Id)
 }
 
-func (s StructType) typeFunc() {}
+func (s StructType) canConvertTo(t Type) bool {
+	switch v := t.(type) {
+	case *StructType:
+		return s.Id == v.Id
+	case *ErrorType:
+		return true
+	}
+
+	return false
+}
 
 type VoidType struct{}
 
@@ -60,7 +87,31 @@ func (v VoidType) GoString() string {
 	return fmt.Sprintf("void")
 }
 
-func (v VoidType) typeFunc() {}
+func (v VoidType) canConvertTo(t Type) bool {
+	return false
+}
+
+type NullType struct{}
+
+func (n NullType) canConvertTo(t Type) bool {
+	_, ok := t.(StructType)
+	return ok
+}
+
+type FunctionType struct {
+	Parameters []*Declaration
+	ReturnType Type
+}
+
+func (f FunctionType) canConvertTo(t Type) bool {
+	return false
+}
+
+type ErrorType struct{}
+
+func (e ErrorType) canConvertTo(t Type) bool {
+	return true
+}
 
 // === Functions ===
 type Function struct {
@@ -274,4 +325,8 @@ type Position struct {
 
 func (p Position) GoString() string {
 	return fmt.Sprintf("Line: %v, Col: %v", p.Line, p.Column)
+}
+
+func (p Position) String() string {
+	return fmt.Sprintf("%v:%v", p.Line, p.Column)
 }
