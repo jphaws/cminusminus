@@ -34,6 +34,10 @@ func (i IntType) GoString() string {
 	return fmt.Sprintf("int")
 }
 
+func (i IntType) String() string {
+	return fmt.Sprintf("int")
+}
+
 func (i IntType) canConvertTo(t Type) bool {
 	switch t.(type) {
 	case *IntType:
@@ -48,6 +52,10 @@ func (i IntType) canConvertTo(t Type) bool {
 type BoolType struct{}
 
 func (b BoolType) GoString() string {
+	return fmt.Sprintf("bool")
+}
+
+func (b BoolType) String() string {
 	return fmt.Sprintf("bool")
 }
 
@@ -70,10 +78,14 @@ func (s StructType) GoString() string {
 	return fmt.Sprintf("struct %v", s.Id)
 }
 
+func (s StructType) String() string {
+	return fmt.Sprintf("struct %v", s.Id)
+}
+
 func (s StructType) canConvertTo(t Type) bool {
 	switch v := t.(type) {
 	case *StructType:
-		return s.Id == v.Id
+		return v.Id == "" || s.Id == v.Id
 	case *ErrorType:
 		return true
 	}
@@ -87,27 +99,74 @@ func (v VoidType) GoString() string {
 	return fmt.Sprintf("void")
 }
 
+func (v VoidType) String() string {
+	return fmt.Sprintf("void")
+}
+
 func (v VoidType) canConvertTo(t Type) bool {
-	return false
+	_, ok := t.(*VoidType)
+	return ok
 }
 
 type NullType struct{}
 
+func (n NullType) String() string {
+	return fmt.Sprintf("null")
+}
+
 func (n NullType) canConvertTo(t Type) bool {
-	_, ok := t.(StructType)
+	_, ok := t.(*StructType)
 	return ok
 }
 
 type FunctionType struct {
-	Parameters []*Declaration
+	Parameters []Type
 	ReturnType Type
 }
 
+func (f FunctionType) String() string {
+	ret := fmt.Sprintf("fun(")
+
+	for i, v := range f.Parameters {
+		if i != 0 {
+			ret += ", "
+		}
+
+		ret += fmt.Sprintf("%v", v)
+	}
+
+	ret += fmt.Sprintf(") %v", f.ReturnType)
+	return ret
+}
+
 func (f FunctionType) canConvertTo(t Type) bool {
-	return false
+	otherF, ok := t.(*FunctionType)
+	if !ok {
+		return false
+	}
+
+	if !f.ReturnType.canConvertTo(otherF.ReturnType) {
+		return false
+	}
+
+	if len(f.Parameters) != len(otherF.Parameters) {
+		return false
+	}
+
+	for i, v := range f.Parameters {
+		if !v.canConvertTo(otherF.Parameters[i]) {
+			return false
+		}
+	}
+
+	return true
 }
 
 type ErrorType struct{}
+
+func (e ErrorType) String() string {
+	return fmt.Sprintf("error")
+}
 
 func (e ErrorType) canConvertTo(t Type) bool {
 	return true
@@ -198,12 +257,20 @@ type NameLValue struct {
 	Name     string
 }
 
+func (n NameLValue) String() string {
+	return fmt.Sprintf("%v", n.Name)
+}
+
 func (n NameLValue) lValueFunc() {}
 
 type DotLValue struct {
 	Position *Position
 	Left     LValue
 	Name     string
+}
+
+func (d DotLValue) String() string {
+	return fmt.Sprintf("%v", d.Name)
 }
 
 func (d DotLValue) lValueFunc() {}
@@ -259,12 +326,6 @@ type IntExpression struct {
 }
 
 func (i IntExpression) expressionFunc() {}
-
-type ReadExpression struct {
-	Position *Position
-}
-
-func (r ReadExpression) expressionFunc() {}
 
 type TrueExpression struct {
 	Position *Position

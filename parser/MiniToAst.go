@@ -9,7 +9,7 @@ import (
 // === Root ===
 
 // MiniToAst is the entry function for creating AST from ANTLR parse tree
-func MiniToAst(ctx mantlr.IProgramContext) ast.Root {
+func MiniToAst(ctx mantlr.IProgramContext) *ast.Root {
 	funcs := ctx.Functions().AllFunction()
 	ch := make(chan *ast.Function)
 	functions := make([]*ast.Function, 0, len(funcs))
@@ -27,7 +27,7 @@ func MiniToAst(ctx mantlr.IProgramContext) ast.Root {
 		functions = append(functions, <-ch)
 	}
 
-	return ast.Root{
+	return &ast.Root{
 		Types:        types,
 		Declarations: declarations,
 		Functions:    functions,
@@ -67,11 +67,11 @@ func gatherFieldDeclaration(decls []mantlr.IDeclContext) []*ast.Declaration {
 func typeToAst(typ mantlr.ITypeContext) ast.Type {
 	switch v := typ.(type) {
 	case *mantlr.IntTypeContext:
-		return ast.IntType{}
+		return &ast.IntType{}
 	case *mantlr.BoolTypeContext:
-		return ast.BoolType{}
+		return &ast.BoolType{}
 	case *mantlr.StructTypeContext:
-		return ast.StructType{Id: v.ID().GetText()}
+		return &ast.StructType{Id: v.ID().GetText()}
 	}
 
 	return nil
@@ -84,12 +84,12 @@ func declarationsToAst(declarations []mantlr.IDeclarationContext) []*ast.Declara
 	for _, v := range declarations {
 		// Handles comma declarations
 		for _, vv := range v.AllID() {
-			decl := ast.Declaration{
+			decl := &ast.Declaration{
 				Name:     vv.GetText(),
 				Type:     typeToAst(v.Type_()),
 				Position: constructPosition(vv.GetSymbol()),
 			}
-			ret = append(ret, &decl)
+			ret = append(ret, decl)
 		}
 	}
 
@@ -105,7 +105,7 @@ func functionToAst(fn mantlr.IFunctionContext, ch chan *ast.Function) {
 	locals := declarationsToAst(fn.Declarations().AllDeclaration())
 	body := bodyToAst(fn.StatementList().AllStatement())
 
-	ret := ast.Function{
+	ret := &ast.Function{
 		Position:   pos,
 		Name:       name,
 		Parameters: params,
@@ -114,7 +114,7 @@ func functionToAst(fn mantlr.IFunctionContext, ch chan *ast.Function) {
 		Body:       body,
 	}
 
-	ch <- &ret
+	ch <- ret
 }
 
 func paramsToAst(params []mantlr.IDeclContext) []*ast.Declaration {
@@ -136,14 +136,14 @@ func returnTypeToAst(retType mantlr.IReturnTypeContext) ast.Type {
 	case *mantlr.ReturnTypeRealContext:
 		switch vv := v.Type_().(type) {
 		case *mantlr.IntTypeContext:
-			return ast.IntType{}
+			return &ast.IntType{}
 		case *mantlr.BoolTypeContext:
-			return ast.BoolType{}
+			return &ast.BoolType{}
 		case *mantlr.StructTypeContext:
-			return ast.StructType{Id: vv.ID().GetText()}
+			return &ast.StructType{Id: vv.ID().GetText()}
 		}
 	case *mantlr.ReturnTypeVoidContext:
-		return ast.VoidType{}
+		return &ast.VoidType{}
 
 	}
 
@@ -202,16 +202,6 @@ func blockStatementToAst(block mantlr.IBlockContext) *ast.BlockStatement {
 }
 
 func assignmentStatementToAst(asgn *mantlr.AssignmentContext) *ast.AssignmentStatement {
-	if asgn.Expression() == nil {
-		return &ast.AssignmentStatement{
-			Position: constructPosition(asgn.GetStart()),
-			Target:   lValueToAst(asgn.Lvalue()),
-			Source: ast.ReadExpression{
-				Position: constructPosition(asgn.GetStart()),
-			},
-		}
-	}
-
 	return &ast.AssignmentStatement{
 		Position: constructPosition(asgn.GetStart()),
 		Target:   lValueToAst(asgn.Lvalue()),
