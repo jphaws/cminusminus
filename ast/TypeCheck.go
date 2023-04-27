@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/keen-cp/compiler-project-c/color"
+
 	om "github.com/wk8/go-ordered-map/v2"
 )
 
@@ -753,24 +755,13 @@ func typeCheckIdentifierExpression(ident *IdentifierExpression,
 	return lookupType(ident.Name, ident.Position, "variable", localTable)
 }
 
-const (
-	colorReset  = "\033[0m"
-	colorRed    = "\033[31m"
-	colorGreen  = "\033[32m"
-	colorYellow = "\033[33m"
-	colorBlue   = "\033[34m"
-	colorPurple = "\033[35m"
-	colorCyan   = "\033[36m"
-	colorWhite  = "\033[37m"
-)
-
 func createError(format string, pos *Position, a ...any) error {
 	s := fmt.Sprintf("%s: error: ", pos)
 	s += fmt.Sprintf(format, a...)
 
 	if pos.Line != 0 {
-		s += fmt.Sprintf("\n %4v | %s%s%s\n      |",
-			pos.Line, colorRed, lines[pos.Line-1], colorReset)
+		s += fmt.Sprintf("\n %4v | %s%s%s%s\n      |",
+			pos.Line, color.Red, color.Bright, lines[pos.Line], color.Reset)
 	}
 
 	return fmt.Errorf(s)

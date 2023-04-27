@@ -6,17 +6,37 @@ import (
 	"os"
 	"strings"
 
-	// "github.com/alecthomas/repr"
-	"github.com/antlr/antlr4/runtime/Go/antlr/v4"
 	"github.com/keen-cp/compiler-project-c/ast"
+	"github.com/keen-cp/compiler-project-c/color"
 	"github.com/keen-cp/compiler-project-c/parser"
 	"github.com/keen-cp/compiler-project-c/parser/mantlr"
+
+	// "github.com/alecthomas/repr"
+	"github.com/antlr/antlr4/runtime/Go/antlr/v4"
 )
+
+var lines = make([]string, 1)
+var syntaxErrors = false
+
+type MiniErrorListener struct {
+	*antlr.DefaultErrorListener
+}
+
+func (m MiniErrorListener) SyntaxError(rec antlr.Recognizer,
+	sym interface{}, ln, co int, msg string, e antlr.RecognitionException) {
+
+	line := ln - 1
+	col := co + 1
+	syntaxErrors = true
+
+	fmt.Printf("%v:%v: syntax error: %v", line, col, msg)
+	fmt.Printf("\n %4v | %s%s%s%s\n      |\n", line, color.Red, color.Bright, lines[line], color.Reset)
+}
 
 func main() {
 	// Check for correct number of arguments
 	if len(os.Args) != 2 {
-		fmt.Fprintln(os.Stderr, "No input file specified")
+		fmt.Fprintln(os.Stderr, "error: no input file specified")
 		os.Exit(1)
 	}
 
@@ -31,8 +51,6 @@ func main() {
 	defer file.Close()
 
 	// Read file line by line
-	lines := make([]string, 1)
-
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		lines = append(lines, scanner.Text())
@@ -46,30 +64,34 @@ func main() {
 	// Create ANTLR input stream
 	input := antlr.NewInputStream(strings.Join(lines, "\n"))
 
-	// Create token stream
+	// Create lexer
 	lexer := mantlr.NewMiniLexer(input)
+	lexer.RemoveErrorListeners()
+	lexer.AddErrorListener(MiniErrorListener{})
+
+	// Create token stream (from lexer)
 	stream := antlr.NewCommonTokenStream(lexer, 0)
 
-	p := mantlr.NewMiniParser(stream)
-	p.AddErrorListener(antlr.NewDiagnosticErrorListener(true))
-	p.BuildParseTrees = true
-	prog := p.Program()
+	// Create parser
+	parsr := mantlr.NewMiniParser(stream)
+	parsr.RemoveErrorListeners()
+	parsr.AddErrorListener(MiniErrorListener{})
 
+	// Build parse tree
+	parsr.BuildParseTrees = true
+	prog := parsr.Program()
+
+	if syntaxErrors {
+		os.Exit(3)
+	}
+
+	// Convert parse tree to AST
 	root := parser.MiniToAst(prog)
-	/*
-		fmt.Println("===== AST =====")
-		repr.Println(root, repr.Indent("   "))
-	*/
 
+	// Type check AST
 	err = ast.TypeCheck(root, lines)
-	/*
-		fmt.Println("===== Struct table =====")
-		repr.Println(ast.StructTable)
-		fmt.Println("\n===== Symbol table =====")
-		repr.Println(ast.SymbolTable)
-		fmt.Println("\n===== Errors =====")
-	*/
 	if err != nil {
 		fmt.Println(err)
+		os.Exit(4)
 	}
 }

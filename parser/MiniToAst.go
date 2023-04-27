@@ -422,7 +422,7 @@ func argumentsToAst(args []mantlr.IExpressionContext) []ast.Expression {
 // === Position ===
 func constructPosition(tok antlr.Token) *ast.Position {
 	return &ast.Position{
-		Line:   tok.GetLine(),
+		Line:   tok.GetLine() - 1,
 		Column: tok.GetColumn() + 1,
 	}
 }
