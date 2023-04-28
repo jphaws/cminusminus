@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/keen-cp/compiler-project-c/ast"
+	"github.com/keen-cp/compiler-project-c/cfg"
 	"github.com/keen-cp/compiler-project-c/color"
 	"github.com/keen-cp/compiler-project-c/parser"
 	"github.com/keen-cp/compiler-project-c/parser/mantlr"
@@ -94,4 +95,9 @@ func main() {
 		fmt.Println(err)
 		os.Exit(4)
 	}
+
+	blocks := cfg.CreateCfg(root)
+	// repr.Println(blocks)
+	graph, _ := cfg.CreateGraph(blocks[0])
+	fmt.Println(graph)
 }
