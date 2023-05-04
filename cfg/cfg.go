@@ -133,6 +133,7 @@ func CreateCfg(root *ast.Root) []*Block {
 }
 
 func functionCfg(fn *ast.Function, ch chan *Block) {
+	// Create entry block
 	entry := &Block{
 		function: fn.Name,
 		types:    make([]blockType, 1),
@@ -142,6 +143,7 @@ func functionCfg(fn *ast.Function, ch chan *Block) {
 
 	entry.types[0] = &fnEntryBlock{}
 
+	// Create exit block
 	exit := &Block{
 		function: fn.Name,
 		types:    make([]blockType, 1),
@@ -151,7 +153,33 @@ func functionCfg(fn *ast.Function, ch chan *Block) {
 
 	exit.types[0] = &fnExitBlock{}
 
-	processStatements(fn.Body, entry, exit, 0)
+	// Process function body
+	end, _ := processStatements(fn.Body, entry, exit, 0)
+
+	// Link the final block of a void function to the exit (if not done already)
+	_, ok := fn.ReturnType.(*ast.VoidType)
+
+	if ok && end != exit {
+		end.Next = exit
+		exit.Prev = append(exit.Prev, end)
+	}
+
+	// Compress final and end blocks (if needed)
+	switch len(exit.Prev) {
+	case 0:
+		// Add extra fnexit type to the final block
+		end.types = append(end.types, &fnExitBlock{})
+
+	case 1:
+		// Add extra fnexit type to the final block
+		end = exit.Prev[0]
+		end.types = append(end.types, &fnExitBlock{})
+
+		// Remove links to old exit block
+		end.Next = nil
+		exit.Prev = []*Block{}
+	}
+
 	ch <- entry
 }
 
@@ -159,8 +187,6 @@ func processStatements(stmts []ast.Statement, curr *Block,
 	funcExit *Block, count int) (b *Block, rcount int) {
 
 	rcount = count
-
-	// fmt.Printf("%v: stmts %v\n", curr.Label(), stmts)
 
 	for _, s := range stmts {
 		switch stmt := s.(type) {

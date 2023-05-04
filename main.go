@@ -98,6 +98,6 @@ func main() {
 
 	blocks := cfg.CreateCfg(root)
 	// repr.Println(blocks)
-	graph, _ := cfg.CreateGraph(blocks[0])
+	graph := cfg.CreateGraph(blocks)
 	fmt.Println(graph)
 }

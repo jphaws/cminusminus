@@ -1,49 +1,85 @@
 package cfg
 
 import (
+	"fmt"
+
 	dot "github.com/awalterschulze/gographviz"
 )
 
 var visited = map[*Block]struct{}{}
 
-func CreateGraph(block *Block) (s string, err error) {
+func CreateGraph(blocks []*Block) string {
 	graph := dot.NewGraph()
-	graph.SetName(block.function)
+	graph.SetName("G")
 	graph.SetDir(true)
 
-	processBlock(block, graph) // TODO err
+	for _, v := range blocks {
+		fn := "cluster_" + v.function
+		graph.AddSubGraph("G", fn, map[string]string{"label": v.function})
+		processBlock(v, graph, fn)
+	}
 
-	s = graph.String()
-	return
+	return graph.String()
 }
 
-func processBlock(block *Block, graph *dot.Graph) (lab string, err error) {
+func processBlock(block *Block, graph *dot.Graph, fn string) {
+	// Check if this block has been visited before
 	if _, present := visited[block]; present {
 		return
 	}
 	visited[block] = struct{}{}
 
-	function := block.function
-	lab = block.Label()
-	// fmt.Println(function)
-	// fmt.Println(lab)
-	// fmt.Println(graph.String())
+	label := block.Label()
 
-	graph.AddNode(function, lab, nil)
+	// Generate block label (for dot)
+	body := "\"{" + label + "|"
+	for _, v := range block.Instrs {
+		body += fmt.Sprintf("%T\\n", v)
+	}
+	body += "|{<next>next|<else>else}}\""
 
+	// Set default node attributes
+	attrs := map[string]string{
+		"shape":    "record",
+		"fontsize": "5",
+		"penwidth": "0.5",
+		"label":    body,
+	}
+
+	// Add color to entry and exit blocks
+	if len(block.Prev) == 0 || block.Next == nil {
+		attrs["color"] = "red"
+	}
+
+	// Create node for this block
+	graph.AddNode(fn, label, attrs)
+
+	// Set default edge attributes
+	edgeAttrs := map[string]string{
+		"penwidth": "0.5",
+		"fontsize": "4",
+		"label":    "next",
+	}
+
+	// Add next edge
 	if block.Next != nil {
-		processBlock(block.Next, graph)                   // TODO err
-		graph.AddEdge(lab, block.Next.Label(), true, nil) // TODO err
+		processBlock(block.Next, graph, fn)
+		graph.AddPortEdge(label, "next", block.Next.Label(), "", true, edgeAttrs)
 	}
 
+	// Add else edge
 	if block.Els != nil {
-		processBlock(block.Els, graph)                   // TODO err
-		graph.AddEdge(lab, block.Els.Label(), true, nil) // TODO err
+		processBlock(block.Els, graph, fn)
+		edgeAttrs["label"] = "else"
+		graph.AddPortEdge(label, "else", block.Els.Label(), "", true, edgeAttrs)
 	}
 
-	for _, v := range block.Prev {
-		graph.AddEdge(lab, v.Label(), true, nil)
-	}
+	/*
+		for _, v := range block.Prev {
+			edgeAttrs["label"] = "prev"
+			graph.AddEdge(label, v.Label(), true, edgeAttrs)
+		}
+	*/
 
 	return
 }
