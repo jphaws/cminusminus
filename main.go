@@ -7,8 +7,8 @@ import (
 	"strings"
 
 	"github.com/keen-cp/compiler-project-c/ast"
-	"github.com/keen-cp/compiler-project-c/cfg"
 	"github.com/keen-cp/compiler-project-c/color"
+	"github.com/keen-cp/compiler-project-c/ir"
 	"github.com/keen-cp/compiler-project-c/parser"
 	"github.com/keen-cp/compiler-project-c/parser/mantlr"
 
@@ -90,14 +90,16 @@ func main() {
 	root := parser.MiniToAst(prog)
 
 	// Type check AST
-	err = ast.TypeCheck(root, lines)
+	tables, err := ast.TypeCheck(root, lines)
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(4)
 	}
 
-	blocks := cfg.CreateCfg(root)
-	// repr.Println(blocks)
-	graph := cfg.CreateGraph(blocks)
-	fmt.Println(graph)
+	// Create IR
+	rep := ir.CreateIr(root, tables)
+
+	// fmt.Println(rep.ToDot())
+
+	fmt.Println(rep.ToLlvm())
 }

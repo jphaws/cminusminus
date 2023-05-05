@@ -10,19 +10,24 @@ import (
 )
 
 // (struct) 'ID' -> [field 'Name' -> Type]
-var StructTable = make(map[string]*om.OrderedMap[string, Type])
+var structTable = make(map[string]*om.OrderedMap[string, Type])
 
 // 'Name' -> Type
-var SymbolTable = make(map[string]Type)
+var symbolTable = make(map[string]Type)
 
 var lines []string
 
+type Tables struct {
+	StructTable map[string]*om.OrderedMap[string, Type]
+	SymbolTable map[string]Type
+}
+
 // === Root ===
-func TypeCheck(root *Root, lns []string) (err error) {
+func TypeCheck(root *Root, lns []string) (tab *Tables, err error) {
 	funcErr := make(chan error)
 	lines = lns
 
-	// Check type definitions and add to StructTable
+	// Check type definitions and add to structTable
 	err = generateStructTable(root.Types)
 
 	// Generate global symbol table and check for errors
@@ -33,9 +38,14 @@ func TypeCheck(root *Root, lns []string) (err error) {
 		return
 	}
 
+	tab = &Tables{
+		StructTable: structTable,
+		SymbolTable: symbolTable,
+	}
+
 	// Type check function bodies in goroutines
-	for i := range root.Functions {
-		go typeCheckFunction(root.Functions[i], funcErr)
+	for _, v := range root.Functions {
+		go typeCheckFunction(v, funcErr)
 	}
 	// Synchronize completed functions
 	for range root.Functions {
@@ -67,7 +77,7 @@ func generateStructTable(types []*TypeDeclaration) (err error) {
 		id := v.Id
 
 		// Check for re-declaration
-		if _, ok := StructTable[id]; ok {
+		if _, ok := structTable[id]; ok {
 			e := createError("re-declaration of 'struct %s'", v.Position, id)
 			err = errors.Join(err, e)
 			continue
@@ -78,7 +88,7 @@ func generateStructTable(types []*TypeDeclaration) (err error) {
 		err = errors.Join(err, e)
 
 		// Add to struct table
-		StructTable[id] = om
+		structTable[id] = om
 	}
 
 	return
@@ -98,7 +108,7 @@ func addFields(structId string,
 		if v, ok := f.Type.(*StructType); ok {
 			id := v.Id
 
-			if _, present := StructTable[id]; !present && id != structId {
+			if _, present := structTable[id]; !present && id != structId {
 				e := createError("'%v' not declared (yet?)", f.Position, v)
 				err = errors.Join(err, e)
 				continue
@@ -129,7 +139,7 @@ func generateSymbolTable(decls []*Declaration, funcs []*Function) (err error) {
 
 func addGlobals(decls []*Declaration) (err error) {
 	for _, v := range decls {
-		e := addDeclaration(v, "global variable", SymbolTable)
+		e := addDeclaration(v, "global variable", symbolTable)
 		err = errors.Join(err, e)
 	}
 
@@ -159,7 +169,7 @@ func addDeclaration(decl *Declaration, desc string, table map[string]Type) (err 
 func checkStructDeclared(typ Type, pos *Position) (om *om.OrderedMap[string, Type], err error) {
 	if v, ok := typ.(*StructType); ok {
 		var present bool
-		if om, present = StructTable[v.Id]; !present {
+		if om, present = structTable[v.Id]; !present {
 			err = createError("'%v' not defined", pos, v)
 		}
 	}
@@ -172,7 +182,7 @@ func addFunctions(funcs []*Function) (err error) {
 		name := v.Name
 
 		// Check for function re-declaration
-		if _, present := SymbolTable[name]; present {
+		if _, present := symbolTable[name]; present {
 			e := createError("re-declaration of 'fun %v'", v.Position, name)
 			err = errors.Join(err, e)
 			continue
@@ -193,7 +203,7 @@ func addFunctions(funcs []*Function) (err error) {
 			Parameters: params,
 			ReturnType: v.ReturnType,
 		}
-		SymbolTable[name] = typ
+		symbolTable[name] = typ
 	}
 
 	return
@@ -323,7 +333,7 @@ func lookupLocal(name string, pos *Position,
 }
 
 func lookupGlobal(name string, pos *Position, desc string) (typ Type, err error) {
-	if v, present := SymbolTable[name]; present {
+	if v, present := symbolTable[name]; present {
 		typ = v
 	} else {
 		typ = &ErrorType{}

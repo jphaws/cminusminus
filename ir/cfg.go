@@ -1,4 +1,4 @@
-package cfg // Mini
+package ir // Mini
 
 import (
 	"fmt"
@@ -12,7 +12,7 @@ type Block struct {
 	Prev     []*Block
 	Next     *Block
 	Els      *Block
-	Instrs   []ast.Statement
+	Instrs   []Instr
 }
 
 func (b *Block) Label() string {
@@ -115,84 +115,80 @@ func (f fnExitBlock) String() string {
 	return fmt.Sprintf("exit")
 }
 
-func CreateCfg(root *ast.Root) []*Block {
-	blockChan := make(chan *Block)
-	ret := make([]*Block, len(root.Functions))
-
-	// Generate CFG for each function
-	for i := range root.Functions {
-		go functionCfg(root.Functions[i], blockChan)
-	}
-
-	// Synchronize completed functions
-	for i := range root.Functions {
-		ret[i] = <-blockChan
-	}
-
-	return ret
-}
-
-func functionCfg(fn *ast.Function, ch chan *Block) {
+func processFunction(fn *ast.Function, ch chan *Function) {
 	// Create entry block
 	entry := &Block{
 		function: fn.Name,
 		types:    make([]blockType, 1),
 		Prev:     []*Block{},
-		Instrs:   make([]ast.Statement, 0),
+		Instrs:   make([]Instr, 0),
 	}
 
 	entry.types[0] = &fnEntryBlock{}
+
+	// Initialize entry variables
+	instrs, locals, params := functionInitLlvm(fn)
+	entry.Instrs = append(entry.Instrs, instrs...)
 
 	// Create exit block
 	exit := &Block{
 		function: fn.Name,
 		types:    make([]blockType, 1),
 		Prev:     make([]*Block, 0),
-		Instrs:   make([]ast.Statement, 0),
+		Instrs:   make([]Instr, 0),
 	}
 
 	exit.types[0] = &fnExitBlock{}
 
-	// Process function body
-	end, _ := processStatements(fn.Body, entry, exit, 0)
-
-	// Link the final block of a void function to the exit (if not done already)
-	_, ok := fn.ReturnType.(*ast.VoidType)
-
-	if ok && end != exit {
-		end.Next = exit
-		exit.Prev = append(exit.Prev, end)
+	// Add a dummy return statement to the end of void functions
+	if _, ok := fn.ReturnType.(*ast.VoidType); ok {
+		fn.Body = append(fn.Body, &ast.ReturnStatement{}) // No position required
 	}
 
-	// Compress final and end blocks (if needed)
-	switch len(exit.Prev) {
-	case 0:
-		// Add extra fnexit type to the final block
-		end.types = append(end.types, &fnExitBlock{})
+	// Process function body
+	end, _ := processStatements(fn.Body, entry, exit, locals, 0)
 
-	case 1:
+	// Compress final and end blocks (if needed)
+	if len(exit.Prev) == 1 {
 		// Add extra fnexit type to the final block
 		end = exit.Prev[0]
 		end.types = append(end.types, &fnExitBlock{})
 
+		// Remove unneeded branch instruction
+		if len(end.Instrs) > 0 {
+			end.Instrs = end.Instrs[:len(end.Instrs)-1]
+		}
+
 		// Remove links to old exit block
 		end.Next = nil
 		exit.Prev = []*Block{}
+		exit = end
 	}
 
-	ch <- entry
+	// Add return instructions
+	instrs = functionFiniLlvm(fn, locals)
+	exit.Instrs = append(exit.Instrs, instrs...)
+
+	// Create IR function wrapper
+	ret := &Function{
+		Name:       fn.Name,
+		Parameters: params,
+		ReturnType: typeToLlvm(fn.ReturnType),
+		Cfg:        entry,
+	}
+
+	ch <- ret
 }
 
 func processStatements(stmts []ast.Statement, curr *Block,
-	funcExit *Block, count int) (b *Block, rcount int) {
+	funcExit *Block, locals map[string]*Register, count int) (b *Block, rcount int) {
 
 	rcount = count
 
 	for _, s := range stmts {
 		switch stmt := s.(type) {
 		case *ast.IfStatement:
-			// fmt.Printf("%T at %v\n", stmt, stmt.Position)
-			curr, count = processIfStatement(stmt, curr, funcExit, count+1)
+			curr, count = processIfStatement(stmt, curr, funcExit, locals, count+1)
 			rcount = count
 
 			// Bail out if return equivalent
@@ -202,18 +198,31 @@ func processStatements(stmts []ast.Statement, curr *Block,
 			}
 
 		case *ast.WhileStatement:
-			curr, count = processWhileStatement(stmt, curr, funcExit, count+1)
+			curr, count = processWhileStatement(stmt, curr, funcExit, locals, count+1)
 
 		case *ast.ReturnStatement:
-			// fmt.Printf("%T at %v\n", stmt, stmt.Position)
 			curr.Next = funcExit
 			funcExit.Prev = append(funcExit.Prev, curr)
+
+			instrs := returnStatementToLlvm(stmt, funcExit, locals)
+			curr.Instrs = append(curr.Instrs, instrs...)
+
 			b = nil
 			return
 
+		case *ast.BlockStatement:
+			curr, count = processStatements(stmt.Statements, curr, funcExit, locals, count)
+
+			// Bail out if return equivalent
+			if curr == nil {
+				b = curr
+				return
+			}
+
 		default:
+			// curr.Instrs = append(curr.Instrs, &RetInstr{"STMT"})
 			// fmt.Printf("%T\n", stmt)
-			curr.Instrs = append(curr.Instrs, stmt)
+			// curr.Instrs = append(curr.Instrs, stmt)
 		}
 	}
 
@@ -222,7 +231,7 @@ func processStatements(stmts []ast.Statement, curr *Block,
 }
 
 func processIfStatement(fi *ast.IfStatement, curr *Block,
-	funcExit *Block, count int) (b *Block, rcount int) {
+	funcExit *Block, locals map[string]*Register, count int) (b *Block, rcount int) {
 
 	var thenExit, elseExit, ifExit *Block
 	fn := curr.function
@@ -237,7 +246,7 @@ func processIfStatement(fi *ast.IfStatement, curr *Block,
 	curr.Next = thenEntry
 
 	// Process then statements
-	thenExit, rcount = processStatements(fi.Then.Statements, thenEntry, funcExit, count)
+	thenExit, rcount = processStatements(fi.Then.Statements, thenEntry, funcExit, locals, count)
 
 	// When there is no else block, link current block to ifexit
 	if fi.Else == nil {
@@ -251,14 +260,14 @@ func processIfStatement(fi *ast.IfStatement, curr *Block,
 		curr.Els = elseEntry
 
 		// Process else statements
-		elseExit, rcount = processStatements(fi.Else.Statements, elseEntry, funcExit, rcount)
+		elseExit, rcount = processStatements(fi.Else.Statements, elseEntry, funcExit, locals, rcount)
 
 		// Create ifexit block
 		ifExit = createBlock(fn, &ifExitBlock{count}, []*Block{thenExit, elseExit})
 	}
 
 	// Check if both bodies are return equivalent
-	if thenExit == nil && elseExit == nil {
+	if thenExit == nil && fi.Else != nil && elseExit == nil {
 		return
 	}
 
@@ -276,7 +285,7 @@ func processIfStatement(fi *ast.IfStatement, curr *Block,
 }
 
 func processWhileStatement(whl *ast.WhileStatement, curr *Block,
-	funcExit *Block, count int) (whileExit *Block, rcount int) {
+	funcExit *Block, locals map[string]*Register, count int) (whileExit *Block, rcount int) {
 
 	fn := curr.function
 
@@ -296,7 +305,7 @@ func processWhileStatement(whl *ast.WhileStatement, curr *Block,
 	curr.Next = whileEntry
 
 	// Process while statements
-	whileGuard, rcount := processStatements(whl.Body.Statements, whileEntry, funcExit, count)
+	whileGuard, rcount := processStatements(whl.Body.Statements, whileEntry, funcExit, locals, count)
 
 	// Check if body is return equivalent
 	if whileGuard != nil {
@@ -320,7 +329,7 @@ func createBlock(function string, typ blockType, prev []*Block) *Block {
 		function: function,
 		types:    make([]blockType, 1),
 		Prev:     prev,
-		Instrs:   make([]ast.Statement, 0),
+		Instrs:   make([]Instr, 0),
 	}
 
 	ret.types[0] = typ

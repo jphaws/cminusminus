@@ -1,4 +1,4 @@
-package cfg
+package ir
 
 import (
 	"fmt"
@@ -34,7 +34,7 @@ func processBlock(block *Block, graph *dot.Graph, fn string) {
 	// Generate block label (for dot)
 	body := "\"{" + label + "|"
 	for _, v := range block.Instrs {
-		body += fmt.Sprintf("%T\\n", v)
+		body += fmt.Sprintf("%v\\n", v)
 	}
 	body += "|{<next>next|<else>else}}\""
 
