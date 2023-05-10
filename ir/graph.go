@@ -6,35 +6,38 @@ import (
 	dot "github.com/awalterschulze/gographviz"
 )
 
-var visited = map[*Block]struct{}{}
+const fontName = "Noto Sans Mono"
 
-func CreateGraph(blocks []*Block) string {
-	graph := dot.NewGraph()
+var visited = map[*Block]bool{}
+
+func (p ProgramIr) ToDot() string {
+	graph := dot.NewEscape()
 	graph.SetName("G")
 	graph.SetDir(true)
 
-	for _, v := range blocks {
-		fn := "cluster_" + v.function
-		graph.AddSubGraph("G", fn, map[string]string{"label": v.function})
-		processBlock(v, graph, fn)
+	for k, v := range p.Functions {
+		clusterName := "cluster_" + k
+
+		graph.AddSubGraph("G", clusterName, map[string]string{"label": k})
+		processBlock(v.Cfg, graph, k)
 	}
 
 	return graph.String()
 }
 
-func processBlock(block *Block, graph *dot.Graph, fn string) {
+func processBlock(block *Block, graph *dot.Escape, fn string) {
 	// Check if this block has been visited before
-	if _, present := visited[block]; present {
+	if present := visited[block]; present {
 		return
 	}
-	visited[block] = struct{}{}
+	visited[block] = true
 
 	label := block.Label()
 
 	// Generate block label (for dot)
 	body := "\"{" + label + "|"
 	for _, v := range block.Instrs {
-		body += fmt.Sprintf("%v\\n", v)
+		body += fmt.Sprintf("%v\\l", v)
 	}
 	body += "|{<next>next|<else>else}}\""
 
@@ -42,6 +45,7 @@ func processBlock(block *Block, graph *dot.Graph, fn string) {
 	attrs := map[string]string{
 		"shape":    "record",
 		"fontsize": "5",
+		"fontname": fontName,
 		"penwidth": "0.5",
 		"label":    body,
 	}
@@ -58,6 +62,7 @@ func processBlock(block *Block, graph *dot.Graph, fn string) {
 	edgeAttrs := map[string]string{
 		"penwidth": "0.5",
 		"fontsize": "4",
+		"fontname": fontName,
 		"label":    "next",
 	}
 

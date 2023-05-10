@@ -213,16 +213,6 @@ func (v VoidType) String() string {
 	return "void"
 }
 
-type FunctionType struct {
-	ReturnType Type
-}
-
-func (f FunctionType) typeFunc() {}
-
-func (f FunctionType) String() string {
-	return "fun"
-}
-
 // === AST to LLVM (statements) ===
 func statementToLlvm(stmt ast.Statement) []Instr {
 	switch stmt.(type) {
@@ -310,8 +300,7 @@ func invocationExpressionToLlvm(inv *ast.InvocationExpression,
 	}
 
 	// Get return type
-	retType := symbolTable[inv.Name].GetType().(*PointerType).
-		TargetType.(*FunctionType).ReturnType // TODO Wow!
+	retType := functionTable[inv.Name].ReturnType
 
 	// Build call instruction
 	val = &Register{
@@ -517,8 +506,6 @@ func typeToLlvm(typ ast.Type) Type {
 		return &VoidType{}
 	case *ast.NullType:
 		return &PointerType{}
-	case *ast.FunctionType:
-		return &FunctionType{typeToLlvm(v.ReturnType)}
 	}
 
 	panic("Unsupported type")

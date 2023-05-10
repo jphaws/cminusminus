@@ -171,7 +171,6 @@ func processFunction(fn *ast.Function, ch chan *Function) {
 
 	// Create IR function wrapper
 	ret := &Function{
-		Name:       fn.Name,
 		Parameters: params,
 		ReturnType: typeToLlvm(fn.ReturnType),
 		Cfg:        entry,

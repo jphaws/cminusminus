@@ -9,7 +9,7 @@ import (
 	om "github.com/wk8/go-ordered-map/v2"
 )
 
-// (struct) 'ID' -> [field 'Name' -> Type]
+// (struct) 'Id' -> [field 'Name' -> Type]
 var structTable = make(map[string]*om.OrderedMap[string, Type])
 
 // 'Name' -> Type
