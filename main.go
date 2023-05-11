@@ -16,7 +16,7 @@ import (
 	"github.com/antlr/antlr4/runtime/Go/antlr/v4"
 )
 
-var lines = make([]string, 1)
+var lines []string
 var syntaxErrors = false
 
 type MiniErrorListener struct {
@@ -24,14 +24,13 @@ type MiniErrorListener struct {
 }
 
 func (m MiniErrorListener) SyntaxError(rec antlr.Recognizer,
-	sym interface{}, ln, co int, msg string, e antlr.RecognitionException) {
+	sym interface{}, line, co int, msg string, e antlr.RecognitionException) {
 
-	line := ln - 1
 	col := co + 1
 	syntaxErrors = true
 
 	fmt.Printf("%v:%v: syntax error: %v", line, col, msg)
-	fmt.Printf("\n %4v | %s%s%s%s\n      |\n", line, color.Red, color.Bright, lines[line], color.Reset)
+	fmt.Printf("\n %4v | %s%s%s%s\n      |\n", line, color.Red, color.Bright, lines[line-1], color.Reset)
 }
 
 func main() {

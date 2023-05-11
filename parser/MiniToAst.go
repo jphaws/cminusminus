@@ -36,28 +36,28 @@ func MiniToAst(ctx mantlr.IProgramContext) *ast.Root {
 
 // === Type declarations ===
 func typeDeclarationsToAst(typeDecls []mantlr.ITypeDeclarationContext) []*ast.TypeDeclaration {
-	ret := make([]*ast.TypeDeclaration, len(typeDecls))
+	ret := make([]*ast.TypeDeclaration, 0, len(typeDecls))
 
-	for i, v := range typeDecls {
-		ret[i] = &ast.TypeDeclaration{
+	for _, v := range typeDecls {
+		ret = append(ret, &ast.TypeDeclaration{
 			Position: constructPosition(v.ID().GetSymbol()),
 			Id:       v.ID().GetText(),
 			Fields:   gatherFieldDeclaration(v.NestedDecl().AllDecl()),
-		}
+		})
 	}
 
 	return ret
 }
 
 func gatherFieldDeclaration(decls []mantlr.IDeclContext) []*ast.Declaration {
-	ret := make([]*ast.Declaration, len(decls))
+	ret := make([]*ast.Declaration, 0, len(decls))
 
-	for i, v := range decls {
-		ret[i] = &ast.Declaration{
+	for _, v := range decls {
+		ret = append(ret, &ast.Declaration{
 			Position: constructPosition(v.ID().GetSymbol()),
 			Name:     v.ID().GetText(),
 			Type:     typeToAst(v.Type_()),
-		}
+		})
 	}
 
 	return ret
@@ -118,14 +118,14 @@ func functionToAst(fn mantlr.IFunctionContext, ch chan *ast.Function) {
 }
 
 func paramsToAst(params []mantlr.IDeclContext) []*ast.Declaration {
-	ret := make([]*ast.Declaration, len(params))
+	ret := make([]*ast.Declaration, 0, len(params))
 
-	for i, v := range params {
-		ret[i] = &ast.Declaration{
+	for _, v := range params {
+		ret = append(ret, &ast.Declaration{
 			Position: constructPosition(v.ID().GetSymbol()),
 			Type:     typeToAst(v.Type_()),
 			Name:     v.ID().GetText(),
-		}
+		})
 	}
 
 	return ret
@@ -151,10 +151,10 @@ func returnTypeToAst(retType mantlr.IReturnTypeContext) ast.Type {
 }
 
 func bodyToAst(body []mantlr.IStatementContext) []ast.Statement {
-	ret := make([]ast.Statement, len(body))
+	ret := make([]ast.Statement, 0, len(body))
 
-	for i, v := range body {
-		ret[i] = statementToAst(v)
+	for _, v := range body {
+		ret = append(ret, statementToAst(v))
 	}
 
 	return ret
@@ -189,10 +189,10 @@ func statementToAst(stmt mantlr.IStatementContext) ast.Statement {
 func blockStatementToAst(block mantlr.IBlockContext) *ast.BlockStatement {
 	pos := constructPosition(block.GetStart())
 	blockStmts := block.StatementList().AllStatement()
-	stmts := make([]ast.Statement, len(blockStmts))
+	stmts := make([]ast.Statement, 0, len(blockStmts))
 
-	for i, v := range blockStmts {
-		stmts[i] = statementToAst(v)
+	for _, v := range blockStmts {
+		stmts = append(stmts, statementToAst(v))
 	}
 
 	return &ast.BlockStatement{
@@ -268,10 +268,10 @@ func returnStatementToAst(ret *mantlr.ReturnContext) *ast.ReturnStatement {
 func invocationStatementToAst(inv *mantlr.InvocationContext) *ast.InvocationStatement {
 	pos := constructPosition(inv.ID().GetSymbol())
 	name := inv.ID().GetText()
-	args := make([]ast.Expression, len(inv.Arguments().AllExpression()))
+	args := make([]ast.Expression, 0, len(inv.Arguments().AllExpression()))
 
-	for i, v := range inv.Arguments().AllExpression() {
-		args[i] = expressionToAst(v)
+	for _, v := range inv.Arguments().AllExpression() {
+		args = append(args, expressionToAst(v))
 	}
 
 	return &ast.InvocationStatement{
@@ -410,10 +410,10 @@ func nestedExpressionToAst(nest *mantlr.NestedExprContext) ast.Expression {
 }
 
 func argumentsToAst(args []mantlr.IExpressionContext) []ast.Expression {
-	ret := make([]ast.Expression, len(args))
+	ret := make([]ast.Expression, 0, len(args))
 
-	for i, v := range args {
-		ret[i] = expressionToAst(v)
+	for _, v := range args {
+		ret = append(ret, expressionToAst(v))
 	}
 
 	return ret
@@ -422,7 +422,7 @@ func argumentsToAst(args []mantlr.IExpressionContext) []ast.Expression {
 // === Position ===
 func constructPosition(tok antlr.Token) *ast.Position {
 	return &ast.Position{
-		Line:   tok.GetLine() - 1,
+		Line:   tok.GetLine(),
 		Column: tok.GetColumn() + 1,
 	}
 }

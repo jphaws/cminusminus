@@ -10,13 +10,13 @@ import (
 )
 
 // (struct) 'Id' -> [field 'Name' -> Type]
-var structTable = make(map[string]*om.OrderedMap[string, Type])
+var structTable = map[string]*om.OrderedMap[string, Type]{}
 
 // 'Name' -> Register
-var symbolTable = make(map[string]*Register)
+var symbolTable = map[string]*Register{}
 
 // 'Name' -> Function
-var functionTable = make(map[string]*Function)
+var functionTable = map[string]*Function{}
 
 type ProgramIr struct {
 	Structs   map[string]*om.OrderedMap[string, Type]
@@ -77,12 +77,10 @@ func structToLlvm(id string, fields *om.OrderedMap[string, Type]) string {
 	ret := fmt.Sprintf("%%struct.%v = type {", id)
 
 	// Create strings for each field type
-	fieldStrs := make([]string, fields.Len())
+	fieldStrs := make([]string, 0, fields.Len())
 
-	i := 0
 	for pair := fields.Oldest(); pair != nil; pair = pair.Next() {
-		fieldStrs[i] = fmt.Sprintf("%v", pair.Value)
-		i++
+		fieldStrs = append(fieldStrs, fmt.Sprintf("%v", pair.Value))
 	}
 
 	// Add all field types to declaration
@@ -108,12 +106,12 @@ func globalToLlvm(name string, reg *Register) string {
 
 func functionToLlvm(name string, fn *Function) string {
 	// Create strings for each parameter
-	params := make([]string, len(fn.Parameters))
+	params := make([]string, 0, len(fn.Parameters))
 
-	for i, param := range fn.Parameters {
+	for _, param := range fn.Parameters {
 		pTyp := param.Type
 		pName := param.Name
-		params[i] = fmt.Sprintf("%v %v", pTyp, pName)
+		params = append(params, fmt.Sprintf("%v %v", pTyp, pName))
 	}
 
 	// Create declaration

@@ -10,10 +10,10 @@ import (
 )
 
 // (struct) 'Id' -> [field 'Name' -> Type]
-var structTable = make(map[string]*om.OrderedMap[string, Type])
+var structTable = map[string]*om.OrderedMap[string, Type]{}
 
 // 'Name' -> Type
-var symbolTable = make(map[string]Type)
+var symbolTable = map[string]Type{}
 
 var lines []string
 
@@ -189,13 +189,13 @@ func addFunctions(funcs []*Function) (err error) {
 		}
 
 		// Check parameters
-		params := make([]Type, len(v.Parameters))
+		params := make([]Type, 0, len(v.Parameters))
 
-		for i, vv := range v.Parameters {
+		for _, vv := range v.Parameters {
 			_, e := checkStructDeclared(vv.Type, vv.Position)
 			err = errors.Join(err, e)
 
-			params[i] = vv.Type
+			params = append(params, vv.Type)
 		}
 
 		// Add corresponding function type to symbol table
@@ -771,7 +771,7 @@ func createError(format string, pos *Position, a ...any) error {
 
 	if pos.Line != 0 {
 		s += fmt.Sprintf("\n %4v | %s%s%s%s\n      |",
-			pos.Line, color.Red, color.Bright, lines[pos.Line], color.Reset)
+			pos.Line, color.Red, color.Bright, lines[pos.Line-1], color.Reset)
 	}
 
 	return fmt.Errorf(s)

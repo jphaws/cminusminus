@@ -65,7 +65,7 @@ type CallInstr struct {
 func (c CallInstr) instrFunc() {}
 
 func (c CallInstr) String() string {
-	args := make([]string, len(c.Arguments))
+	args := make([]string, 0, len(c.Arguments))
 
 	// Only print a target if it exists
 	target := ""
@@ -74,17 +74,17 @@ func (c CallInstr) String() string {
 	}
 
 	// Fill argument strings list
-	for i, v := range c.Arguments {
-		args[i] = fmt.Sprintf("%v %v", v.GetType(), v)
+	for _, v := range c.Arguments {
+		args = append(args, fmt.Sprintf("%v %v", v.GetType(), v))
 	}
 
 	// Handle variadic argument types (if needed)
 	vari := ""
 	if c.Variadic > 0 {
-		variTypes := (make([]string, c.Variadic))
+		variTypes := make([]string, 0, c.Variadic)
 
 		for i := 0; i < c.Variadic; i++ {
-			variTypes[i] = fmt.Sprintf("%v", c.Arguments[i].GetType())
+			variTypes = append(variTypes, fmt.Sprintf("%v", c.Arguments[i].GetType()))
 		}
 
 		vari = fmt.Sprintf(" (%v, ...)", strings.Join(variTypes, ", "))
@@ -300,8 +300,7 @@ func returnStatementToLlvm(ret *ast.ReturnStatement, funcExit *Block, locals map
 
 // === AST to LLVM (expressions) ===
 func expressionToLlvm(expr ast.Expression, locals map[string]*Register) (instrs []Instr, val Value) {
-	// TODO: ?
-	instrs = make([]Instr, 0)
+	instrs = []Instr{}
 
 	switch v := expr.(type) {
 	case *ast.InvocationExpression:
@@ -332,14 +331,14 @@ func expressionToLlvm(expr ast.Expression, locals map[string]*Register) (instrs 
 func invocationExpressionToLlvm(inv *ast.InvocationExpression,
 	locals map[string]*Register, isExpr bool) (instrs []Instr, val Value) {
 
-	instrs = make([]Instr, 0)
-	args := make([]Value, len(inv.Arguments))
+	instrs = []Instr{}
+	args := make([]Value, 0, len(inv.Arguments))
 
 	// Evaluate arguments
-	for i, v := range inv.Arguments {
+	for _, v := range inv.Arguments {
 		argInstrs, argVal := expressionToLlvm(v, locals)
 		instrs = append(instrs, argInstrs...)
-		args[i] = argVal
+		args = append(args, argVal)
 	}
 
 	// Get return type
@@ -460,9 +459,9 @@ func functionInitLlvm(fn *ast.Function) (instrs []Instr,
 	locals map[string]*Register, params []*Register) {
 
 	// Allocate space for local variables and parameters
-	instrs = make([]Instr, 0)
-	locals = make(map[string]*Register)
-	params = make([]*Register, 0)
+	instrs = make([]Instr, 0, 2 * len(fn.Parameters) + len(fn.Locals))
+	locals = make(map[string]*Register, len(fn.Parameters) + len(fn.Locals))
+	params = make([]*Register, 0, len(fn.Parameters))
 
 	for _, v := range fn.Parameters {
 		pReg := &Register{

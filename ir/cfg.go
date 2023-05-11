@@ -119,12 +119,12 @@ func processFunction(fn *ast.Function, ch chan *Function) {
 	// Create entry block
 	entry := &Block{
 		function: fn.Name,
-		types:    make([]blockType, 1),
+		types:    make([]blockType, 0, 2),
 		Prev:     []*Block{},
-		Instrs:   make([]Instr, 0),
+		Instrs:   []Instr{},
 	}
 
-	entry.types[0] = &fnEntryBlock{}
+	entry.types = append(entry.types, &fnEntryBlock{})
 
 	// Initialize entry variables
 	instrs, locals, params := functionInitLlvm(fn)
@@ -133,12 +133,12 @@ func processFunction(fn *ast.Function, ch chan *Function) {
 	// Create exit block
 	exit := &Block{
 		function: fn.Name,
-		types:    make([]blockType, 1),
-		Prev:     make([]*Block, 0),
-		Instrs:   make([]Instr, 0),
+		types:    make([]blockType, 0, 1),
+		Prev:     []*Block{},
+		Instrs:   []Instr{},
 	}
 
-	exit.types[0] = &fnExitBlock{}
+	exit.types = append(exit.types, &fnExitBlock{})
 
 	// Add a dummy return statement to the end of void functions
 	if _, ok := fn.ReturnType.(*ast.VoidType); ok {
@@ -292,13 +292,13 @@ func processWhileStatement(whl *ast.WhileStatement, curr *Block,
 	// TODO: Add guard instructions
 
 	// Create whlexit block (prev: curr, dynamic)
-	whileExit = createBlock(fn, &whileExitBlock{count}, make([]*Block, 1))
-	whileExit.Prev[0] = curr
+	whileExit = createBlock(fn, &whileExitBlock{count}, make([]*Block, 0, 2))
+	whileExit.Prev = append(whileExit.Prev, curr)
 	curr.Els = whileExit
 
 	// Create initial while block (prev: curr, dynamic)
-	whileEntry := createBlock(fn, &whileBlock{count}, make([]*Block, 1))
-	whileEntry.Prev[0] = curr
+	whileEntry := createBlock(fn, &whileBlock{count}, make([]*Block, 0, 2))
+	whileEntry.Prev = append(whileEntry.Prev, curr)
 	curr.Next = whileEntry
 
 	// Process while statements
@@ -324,12 +324,12 @@ func processWhileStatement(whl *ast.WhileStatement, curr *Block,
 func createBlock(function string, typ blockType, prev []*Block) *Block {
 	ret := &Block{
 		function: function,
-		types:    make([]blockType, 1),
+		types:    make([]blockType, 0, 2),
 		Prev:     prev,
-		Instrs:   make([]Instr, 0),
+		Instrs:   []Instr{},
 	}
 
-	ret.types[0] = typ
+	ret.types = append(ret.types, typ)
 
 	return ret
 }
