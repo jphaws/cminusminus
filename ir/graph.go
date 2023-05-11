@@ -8,7 +8,7 @@ import (
 
 const fontName = "Noto Sans Mono"
 
-var visited = map[*Block]bool{}
+var visitedGraph = map[*Block]bool{}
 
 func (p ProgramIr) ToDot() string {
 	graph := dot.NewEscape()
@@ -26,12 +26,7 @@ func (p ProgramIr) ToDot() string {
 }
 
 func processBlock(block *Block, graph *dot.Escape, fn string) {
-	// Check if this block has been visited before
-	if present := visited[block]; present {
-		return
-	}
-	visited[block] = true
-
+	visitedGraph[block] = true
 	label := block.Label()
 
 	// Generate block label (for dot)
@@ -68,15 +63,22 @@ func processBlock(block *Block, graph *dot.Escape, fn string) {
 
 	// Add next edge
 	if block.Next != nil {
-		processBlock(block.Next, graph, fn)
+		if !visitedGraph[block.Next] {
+			processBlock(block.Next, graph, fn)
+		}
+
 		graph.AddPortEdge(label, "next", block.Next.Label(), "", true, edgeAttrs)
 	}
 
 	// Add else edge
 	if block.Els != nil {
-		processBlock(block.Els, graph, fn)
+		if !visitedGraph[block.Els] {
+			processBlock(block.Els, graph, fn)
+		}
+
 		edgeAttrs["label"] = "else"
 		graph.AddPortEdge(label, "else", block.Els.Label(), "", true, edgeAttrs)
+
 	}
 
 	/*

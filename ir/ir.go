@@ -31,8 +31,9 @@ type Function struct {
 }
 
 const (
-	printStrName = "_print"
+	printStrName   = "_print"
 	printlnStrName = "_println"
+	scanStrName    = "_scan"
 )
 
 func (p ProgramIr) ToLlvm() string {
@@ -52,6 +53,9 @@ func (p ProgramIr) ToLlvm() string {
 	ret += "@" + printlnStrName +
 		" = private unnamed_addr constant [5 x i8] c\"%ld\\0a\\00\", align 1\n\n"
 
+	ret += "@" + scanStrName +
+		" = private unnamed_addr constant [4 x i8] c\"%ld\\00\", align 1\n"
+
 	// Declare structs
 	for k, v := range p.Structs {
 		ret += structToLlvm(k, v) + "\n"
@@ -66,7 +70,7 @@ func (p ProgramIr) ToLlvm() string {
 
 	// Define functions
 	for k, v := range p.Functions {
-		ret += functionToLlvm(k, v)
+		ret += functionToLlvm(k, v) + "\n\n"
 	}
 
 	return ret
@@ -123,14 +127,29 @@ func functionToLlvm(name string, fn *Function) string {
 	return ret
 }
 
+var visitedLlvm = map[*Block]bool{}
+
 func (b *Block) toLlvm() string {
+	visitedLlvm[b] = true
+
+	// Process the current block
 	ret := b.Label() + ":\n"
 
 	for _, v := range b.Instrs {
 		ret += fmt.Sprintf("  %v\n", v)
 	}
-
 	ret += "\n"
+
+	// Process next block
+	if b.Next != nil && !visitedLlvm[b.Next] {
+		ret += b.Next.toLlvm()
+	}
+
+	// Process else block
+	if b.Els != nil && !visitedLlvm[b.Els] {
+		ret += b.Els.toLlvm()
+	}
+
 	return ret
 }
 

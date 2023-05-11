@@ -230,17 +230,19 @@ func processStatements(stmts []ast.Statement, curr *Block,
 func processIfStatement(fi *ast.IfStatement, curr *Block,
 	funcExit *Block, locals map[string]*Register, count int) (b *Block, rcount int) {
 
-	var thenExit, elseExit, ifExit *Block
+	var thenEntry, thenExit, elseEntry, elseExit, ifExit *Block
 	fn := curr.function
 
 	// Add extra ifentry type to the current block
 	curr.types = append(curr.types, &ifEntryBlock{count})
 
-	// TODO: Add guard instructions
-
 	// Create initial then block (prev: curr)
-	thenEntry := createBlock(fn, &thenBlock{count}, []*Block{curr})
+	thenEntry = createBlock(fn, &thenBlock{count}, []*Block{curr})
 	curr.Next = thenEntry
+
+	// Add guard instructions
+	guardInstrs, guardVal := createGuardLlvm(fi.Guard, locals)
+	curr.Instrs = append(curr.Instrs, guardInstrs...)
 
 	// Process then statements
 	thenExit, rcount = processStatements(fi.Then.Statements, thenEntry, funcExit, locals, count)
@@ -249,11 +251,12 @@ func processIfStatement(fi *ast.IfStatement, curr *Block,
 	if fi.Else == nil {
 		// Create ifexit block
 		ifExit = createBlock(fn, &ifExitBlock{count}, []*Block{thenExit, curr})
+		elseEntry = ifExit
 		curr.Els = ifExit
 
 	} else {
 		// Otherwise, create initial else block (prev: curr)
-		elseEntry := createBlock(fn, &elseBlock{count}, []*Block{curr})
+		elseEntry = createBlock(fn, &elseBlock{count}, []*Block{curr})
 		curr.Els = elseEntry
 
 		// Process else statements
@@ -263,6 +266,9 @@ func processIfStatement(fi *ast.IfStatement, curr *Block,
 		ifExit = createBlock(fn, &ifExitBlock{count}, []*Block{thenExit, elseExit})
 	}
 
+	// Create guard branch
+	curr.Instrs = append(curr.Instrs, createBranch(guardVal, thenEntry, elseEntry))
+
 	// Check if both bodies are return equivalent
 	if thenExit == nil && fi.Else != nil && elseExit == nil {
 		return
@@ -271,10 +277,14 @@ func processIfStatement(fi *ast.IfStatement, curr *Block,
 	// Link then/else exit blocks to overall ifexit block
 	if thenExit != nil {
 		thenExit.Next = ifExit
+
+		thenExit.Instrs = append(thenExit.Instrs, createJump(ifExit))
 	}
 
 	if elseExit != nil {
 		elseExit.Next = ifExit
+
+		elseExit.Instrs = append(elseExit.Instrs, createJump(ifExit))
 	}
 
 	b = ifExit

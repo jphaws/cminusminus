@@ -109,8 +109,22 @@ func (r RetInstr) String() string {
 	}
 }
 
+type CompInstr struct {
+	Target    *Register
+	Condition Condition
+	Op1       Value
+	Op2       Value
+}
+
+func (c CompInstr) instrFunc() {}
+
+func (c CompInstr) String() string {
+	return fmt.Sprintf("%v = icmp %v %v %v, %v",
+		c.Target, c.Condition, c.Op1.GetType(), c.Op1, c.Op2)
+}
+
 type BranchInstr struct {
-	Cond *Register
+	Cond Value
 	Next *Block
 	Els  *Block
 }
@@ -119,9 +133,9 @@ func (b BranchInstr) instrFunc() {}
 
 func (b BranchInstr) String() string {
 	if b.Cond == nil {
-		return fmt.Sprintf("br label %v", b.Next.Label())
+		return fmt.Sprintf("br label %%%v", b.Next.Label())
 	} else {
-		return fmt.Sprintf("br i1 %v, label %v, label %v", b.Cond, b.Next.Label(), b.Els.Label())
+		return fmt.Sprintf("br i1 %v, label %%%v, label %%%v", b.Cond, b.Next.Label(), b.Els.Label())
 	}
 }
 
@@ -138,18 +152,67 @@ func (b BinaryInstr) String() string {
 	return fmt.Sprintf("%v = %v %v %v, %v", b.Target, b.Operator, b.Op1.GetType(), b.Op1, b.Op2)
 }
 
-// === Operators ===
+type ConvInstr struct {
+	Target     *Register
+	Conversion Conversion
+	Src        Value
+}
+
+func (c ConvInstr) instrFunc() {}
+
+func (c ConvInstr) String() string {
+	return fmt.Sprintf("%v = %v %v %v to %v",
+		c.Target, c.Conversion, c.Src.GetType(), c.Src, c.Target.GetType())
+}
+
+// === Conversions ===
+type Conversion string
+
+const (
+	ZeroExtConversion Conversion = "zext"
+	SignExtConversion Conversion = "sext"
+	TruncConversion   Conversion = "trunc"
+)
+
+func (c Conversion) String() string {
+	return string(c)
+}
+
+// === Conditions/operators ===
+type CondOp interface {
+	condOpFunc()
+}
+
+type Condition string
+
+const (
+	EqualCondition        Condition = "eq"
+	NotEqualCondition     Condition = "ne"
+	GreaterThanCondition  Condition = "sgt"
+	GreaterEqualCondition Condition = "sge"
+	LessThanCondition     Condition = "slt"
+	LessEqualCondition    Condition = "sle"
+)
+
+func (c Condition) condOpFunc() {}
+
+func (c Condition) String() string {
+	return string(c)
+}
+
 type Operator string
 
 const (
-	AddOperator = "add"
-	SubOperator = "sub"
-	MulOperator = "mul"
-	DivOperator = "sdiv"
-	AndOperator = "and"
-	OrOperator  = "or"
-	XorOperator = "xor"
+	AddOperator Operator = "add"
+	SubOperator Operator = "sub"
+	MulOperator Operator = "mul"
+	DivOperator Operator = "sdiv"
+	AndOperator Operator = "and"
+	OrOperator  Operator = "or"
+	XorOperator Operator = "xor"
 )
+
+func (o Operator) condOpFunc() {}
 
 func (o Operator) String() string {
 	return string(o)
@@ -233,7 +296,7 @@ func (v VoidType) String() string {
 func statementToLlvm(stmt ast.Statement, locals map[string]*Register) []Instr {
 	switch v := stmt.(type) {
 	case *ast.AssignmentStatement:
-		return nil
+		return assignmentStatementToLlvm(v, locals)
 	case *ast.PrintStatement:
 		return printStatementToLlvm(v, locals)
 	case *ast.DeleteStatement:
@@ -246,9 +309,46 @@ func statementToLlvm(stmt ast.Statement, locals map[string]*Register) []Instr {
 	panic(fmt.Sprintf("Could not process statement of type %T", stmt))
 }
 
+func assignmentStatementToLlvm(asgn *ast.AssignmentStatement, locals map[string]*Register) []Instr {
+	// TODO handle DotLValue
+	targetName := asgn.Target.(*ast.NameLValue).Name
+
+	target := lookupSymbol(targetName, locals)
+
+	// Read from stdin (if read assignment)
+	if asgn.Source == nil {
+		return readToLlvm(target)
+	}
+
+	// Otherwise, process expression
+	instrs, val := expressionToLlvm(asgn.Source, locals, false)
+
+	return append(instrs, &StoreInstr{
+		Mem: target,
+		Reg: val,
+	})
+}
+
+func readToLlvm(target *Register) []Instr {
+	format := "@" + scanStrName
+
+	return []Instr{&CallInstr{
+		FnName:     "@scanf",
+		ReturnType: &IntType{32},
+		Arguments: []Value{
+			&Literal{
+				Value: format,
+				Type:  &PointerType{&IntType{8}},
+			},
+			target,
+		},
+		Variadic: 1,
+	}}
+}
+
 func printStatementToLlvm(prnt *ast.PrintStatement, locals map[string]*Register) []Instr {
 	// Process expression
-	instrs, val := expressionToLlvm(prnt.Expression, locals)
+	instrs, val := expressionToLlvm(prnt.Expression, locals, false)
 
 	// Select relevant format string
 	format := "@"
@@ -259,12 +359,12 @@ func printStatementToLlvm(prnt *ast.PrintStatement, locals map[string]*Register)
 	}
 
 	instrs = append(instrs, &CallInstr{
-		FnName: "@printf",
+		FnName:     "@printf",
 		ReturnType: &IntType{32},
 		Arguments: []Value{
 			&Literal{
 				Value: format,
-				Type: &PointerType{&IntType{8}},
+				Type:  &PointerType{&IntType{8}},
 			},
 			val,
 		},
@@ -285,7 +385,7 @@ func returnStatementToLlvm(ret *ast.ReturnStatement, funcExit *Block, locals map
 	}
 
 	// Process expression
-	instrs, val := expressionToLlvm(ret.Expression, locals)
+	instrs, val := expressionToLlvm(ret.Expression, locals, false)
 
 	// Store expression value and jump to exit block
 	return append(
@@ -299,8 +399,8 @@ func returnStatementToLlvm(ret *ast.ReturnStatement, funcExit *Block, locals map
 }
 
 // === AST to LLVM (expressions) ===
-func expressionToLlvm(expr ast.Expression, locals map[string]*Register) (instrs []Instr, val Value) {
-	instrs = []Instr{}
+func expressionToLlvm(expr ast.Expression, locals map[string]*Register,
+	isGuard bool) (instrs []Instr, val Value) {
 
 	switch v := expr.(type) {
 	case *ast.InvocationExpression:
@@ -308,9 +408,9 @@ func expressionToLlvm(expr ast.Expression, locals map[string]*Register) (instrs 
 	case *ast.DotExpression:
 		return
 	case *ast.UnaryExpression:
-		return
+		return unaryExpressionToLlvm(v, locals, isGuard)
 	case *ast.BinaryExpression:
-		return binaryExpressionToLlvm(v, locals)
+		return binaryExpressionToLlvm(v, locals, isGuard)
 	case *ast.IdentifierExpression:
 		return identifierExpressionToLlvm(v, locals)
 	case *ast.IntExpression:
@@ -331,12 +431,11 @@ func expressionToLlvm(expr ast.Expression, locals map[string]*Register) (instrs 
 func invocationExpressionToLlvm(inv *ast.InvocationExpression,
 	locals map[string]*Register, isExpr bool) (instrs []Instr, val Value) {
 
-	instrs = []Instr{}
 	args := make([]Value, 0, len(inv.Arguments))
 
 	// Evaluate arguments
 	for _, v := range inv.Arguments {
-		argInstrs, argVal := expressionToLlvm(v, locals)
+		argInstrs, argVal := expressionToLlvm(v, locals, false)
 		instrs = append(instrs, argInstrs...)
 		args = append(args, argVal)
 	}
@@ -365,57 +464,105 @@ func invocationExpressionToLlvm(inv *ast.InvocationExpression,
 	return
 }
 
-func binaryExpressionToLlvm(bin *ast.BinaryExpression,
-	locals map[string]*Register) (instrs []Instr, val Value) {
+func unaryExpressionToLlvm(una *ast.UnaryExpression,
+	locals map[string]*Register, isGuard bool) (instrs []Instr, val Value) {
 
-	instrs, lVal := expressionToLlvm(bin.Left, locals)
-	rInstrs, rVal := expressionToLlvm(bin.Right, locals)
+	switch una.Operator {
+	case ast.NotOperator:
+		return notOpToLlvm(una, locals)
+	case ast.MinusOperator:
+		return minusOpToLlvm(una, locals)
+	}
 
-	instrs = append(instrs, rInstrs...)
+	return
+}
 
-	// TODO OPTIMAZING!
-	// _, lOk := lVal.(*IntType)
+// TODO: Implement not operation
+func notOpToLlvm(not *ast.UnaryExpression, locals map[string]*Register) (instrs []Instr, val Value) {
+	return
+}
+
+func minusOpToLlvm(not *ast.UnaryExpression, locals map[string]*Register) (instrs []Instr, val Value) {
+	// Process operand expression
+	instrs, oVal := expressionToLlvm(not.Operand, locals, false)
 
 	val = &Register{
 		Name: getNextReg(),
-		Type: lVal.GetType(),
+		Type: &IntType{64},
 	}
 
+	// Create negation instruction (0 - value)
 	instrs = append(instrs, &BinaryInstr{
 		Target:   val.(*Register),
-		Operator: operatorToLlvm(bin.Operator),
-		Op1:      lVal,
-		Op2:      rVal,
+		Operator: SubOperator,
+		Op1: &Literal{
+			Value: "0",
+			Type:  &IntType{64},
+		},
+		Op2: oVal,
 	})
 
 	return
 }
 
-/* UNSUPPORTED OPERATIONS:
-	// Unary
-	NotOperator Operator = "!"
+func binaryExpressionToLlvm(bin *ast.BinaryExpression,
+	locals map[string]*Register, isGuard bool) (instrs []Instr, val Value) {
 
-	// Binary
-	MinusOperator        = "-" // Unary unsupported
-	LessThanOperator     = "<"
-	GreaterThanOperator  = ">"
-	LessEqualOperator    = "<="
-	GreaterEqualOperator = ">="
-	EqualOperator        = "=="
-	NotEqualOperator     = "!="
-	AndOperator          = "&&"
-	OrOperator           = "||"
-*/
+	// Process left and right expressions
+	instrs, lVal := expressionToLlvm(bin.Left, locals, false)
+	rInstrs, rVal := expressionToLlvm(bin.Right, locals, false)
+
+	instrs = append(instrs, rInstrs...)
+
+	// Generate instructions depending on binary expression type
+	condOp := operatorToLlvm(bin.Operator)
+
+	switch v := condOp.(type) {
+	case Operator:
+		// Use a binary instruction for arithmetic/boolean
+		val = &Register{
+			Name: getNextReg(),
+			Type: lVal.GetType(),
+		}
+
+		instrs = append(instrs, &BinaryInstr{
+			Target:   val.(*Register),
+			Operator: v,
+			Op1:      lVal,
+			Op2:      rVal,
+		})
+
+	case Condition:
+		// Otherwise, use a compare instruction
+		reg := &Register{
+			Name: getNextReg(),
+			Type: &IntType{1},
+		}
+
+		instrs = append(instrs, &CompInstr{
+			Target:    reg,
+			Condition: v,
+			Op1:       lVal,
+			Op2:       rVal,
+		})
+
+		// Width-extend the bool if needed
+		if isGuard {
+			val = reg
+		} else {
+			var convInstr Instr
+			convInstr, val = boolExtend(reg)
+			instrs = append(instrs, convInstr)
+		}
+	}
+
+	return
+}
 
 func identifierExpressionToLlvm(ident *ast.IdentifierExpression,
 	locals map[string]*Register) (instrs []Instr, val Value) {
 
-	var reg *Register
-	if r, ok := locals[ident.Name]; ok {
-		reg = r
-	} else {
-		reg = symbolTable[ident.Name]
-	}
+	reg := lookupSymbol(ident.Name, locals)
 
 	val = &Register{
 		Name: getNextReg(),
@@ -455,12 +602,82 @@ func newExpressionToLlvm(nw *ast.NewExpression) (instrs []Instr, val Value) {
 }
 */
 
+func lookupSymbol(name string, locals map[string]*Register) *Register {
+	var ret *Register
+
+	if r, ok := locals[name]; ok {
+		ret = r
+	} else {
+		ret = symbolTable[name]
+	}
+
+	return ret
+}
+
+func boolExtend(src *Register) (instr *ConvInstr, reg *Register) {
+	reg = &Register{
+		Name: getNextReg(),
+		Type: &IntType{64},
+	}
+
+	instr = &ConvInstr{
+		Target:     reg,
+		Conversion: ZeroExtConversion,
+		Src:        src,
+	}
+
+	return
+}
+
+func boolTrunc(src *Register) (instr *ConvInstr, reg *Register) {
+	reg = &Register{
+		Name: getNextReg(),
+		Type: &IntType{1},
+	}
+
+	instr = &ConvInstr{
+		Target:     reg,
+		Conversion: TruncConversion,
+		Src:        src,
+	}
+
+	return
+}
+
+// Only call this function on a guard expression!
+func createGuardLlvm(guard ast.Expression,
+	locals map[string]*Register) (instrs []Instr, val Value) {
+
+	// Process guard expression
+	instrs, guardVal := expressionToLlvm(guard, locals, true)
+
+	// Transparently truncate bool literals
+	if v, ok := guardVal.(*Literal); ok {
+		val = &Literal{
+			Value: v.Value,
+			Type:  &IntType{1},
+		}
+		return
+	}
+
+	// Truncate register bools if needed
+	if guardVal.GetType().(*IntType).Width > 1 {
+		var convInstr Instr
+		convInstr, val = boolTrunc(guardVal.(*Register))
+		instrs = append(instrs, convInstr)
+	} else {
+		val = guardVal
+	}
+
+	return
+}
+
 func functionInitLlvm(fn *ast.Function) (instrs []Instr,
 	locals map[string]*Register, params []*Register) {
 
 	// Allocate space for local variables and parameters
-	instrs = make([]Instr, 0, 2 * len(fn.Parameters) + len(fn.Locals))
-	locals = make(map[string]*Register, len(fn.Parameters) + len(fn.Locals))
+	instrs = make([]Instr, 0, 2*len(fn.Parameters)+len(fn.Locals))
+	locals = make(map[string]*Register, len(fn.Parameters)+len(fn.Locals))
 	params = make([]*Register, 0, len(fn.Parameters))
 
 	for _, v := range fn.Parameters {
@@ -536,6 +753,20 @@ func functionFiniLlvm(fn *ast.Function, locals map[string]*Register) []Instr {
 	}
 }
 
+func createJump(next *Block) Instr {
+	return &BranchInstr{
+		Next: next,
+	}
+}
+
+func createBranch(cond Value, next *Block, els *Block) Instr {
+	return &BranchInstr{
+		Cond: cond,
+		Next: next,
+		Els:  els,
+	}
+}
+
 func typeToLlvm(typ ast.Type) Type {
 	switch v := typ.(type) {
 	case *ast.IntType:
@@ -553,10 +784,8 @@ func typeToLlvm(typ ast.Type) Type {
 	panic("Unsupported type")
 }
 
-func operatorToLlvm(op ast.Operator) Operator {
+func operatorToLlvm(op ast.Operator) CondOp {
 	switch op {
-	case ast.NotOperator:
-		panic("A")
 	case ast.TimesOperator:
 		return MulOperator
 	case ast.DivideOperator:
@@ -566,17 +795,17 @@ func operatorToLlvm(op ast.Operator) Operator {
 	case ast.MinusOperator:
 		return SubOperator
 	case ast.LessThanOperator:
-		panic("A")
+		return LessThanCondition
 	case ast.GreaterThanOperator:
-		panic("A")
+		return GreaterThanCondition
 	case ast.LessEqualOperator:
-		panic("A")
+		return LessEqualCondition
 	case ast.GreaterEqualOperator:
-		panic("A")
+		return GreaterEqualCondition
 	case ast.EqualOperator:
-		panic("A")
+		return EqualCondition
 	case ast.NotEqualOperator:
-		panic("A")
+		return NotEqualCondition
 	case ast.AndOperator:
 		return AndOperator
 	case ast.OrOperator:
@@ -585,15 +814,6 @@ func operatorToLlvm(op ast.Operator) Operator {
 
 	panic("Unsupported operator")
 }
-
-/*
-	AddOperator = "add"
-	SubOperator = "sub"
-	MulOperator = "mul"
-	DivOperator = "sdiv"
-	AndOperator = "and"
-	OrOperator = "or"
-*/
 
 func getNextReg() string {
 	regNum++

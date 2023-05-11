@@ -197,7 +197,7 @@ func (b BlockStatement) statementFunc() {}
 type AssignmentStatement struct {
 	Position *Position
 	Target   LValue
-	Source   Expression
+	Source   Expression // If nil, read assignment
 }
 
 func (a AssignmentStatement) statementFunc() {}
@@ -360,18 +360,18 @@ const (
 	NotOperator Operator = "!"
 
 	// Binary
-	TimesOperator        = "*"
-	DivideOperator       = "/"
-	PlusOperator         = "+"
-	MinusOperator        = "-" // Also unary
-	LessThanOperator     = "<"
-	GreaterThanOperator  = ">"
-	LessEqualOperator    = "<="
-	GreaterEqualOperator = ">="
-	EqualOperator        = "=="
-	NotEqualOperator     = "!="
-	AndOperator          = "&&"
-	OrOperator           = "||"
+	TimesOperator        Operator = "*"
+	DivideOperator       Operator = "/"
+	PlusOperator         Operator = "+"
+	MinusOperator        Operator = "-" // Also unary
+	LessThanOperator     Operator = "<"
+	GreaterThanOperator  Operator = ">"
+	LessEqualOperator    Operator = "<="
+	GreaterEqualOperator Operator = ">="
+	EqualOperator        Operator = "=="
+	NotEqualOperator     Operator = "!="
+	AndOperator          Operator = "&&"
+	OrOperator           Operator = "||"
 )
 
 func (o Operator) GoString() string {

@@ -30,7 +30,8 @@ func (m MiniErrorListener) SyntaxError(rec antlr.Recognizer,
 	syntaxErrors = true
 
 	fmt.Printf("%v:%v: syntax error: %v", line, col, msg)
-	fmt.Printf("\n %4v | %s%s%s%s\n      |\n", line, color.Red, color.Bright, lines[line-1], color.Reset)
+	fmt.Printf("\n %4v | %s%s%s%s\n      |\n",
+		line, color.Red, color.Bright, lines[line-1], color.Reset)
 }
 
 func main() {
@@ -99,6 +100,5 @@ func main() {
 	rep := ir.CreateIr(root, tables)
 
 	// fmt.Println(rep.ToDot())
-
 	fmt.Println(rep.ToLlvm())
 }
