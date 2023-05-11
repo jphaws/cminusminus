@@ -219,9 +219,7 @@ func processStatements(stmts []ast.Statement, curr *Block,
 			}
 
 		default:
-			// curr.Instrs = append(curr.Instrs, &RetInstr{"STMT"})
-			// fmt.Printf("%T\n", stmt)
-			// curr.Instrs = append(curr.Instrs, stmt)
+			curr.Instrs = append(curr.Instrs, statementToLlvm(stmt, locals)...)
 		}
 	}
 

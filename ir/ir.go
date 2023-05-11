@@ -30,13 +30,27 @@ type Function struct {
 	Cfg        *Block
 }
 
+const (
+	printStrName = "_print"
+	printlnStrName = "_println"
+)
+
 func (p ProgramIr) ToLlvm() string {
 	// Add target details
 	ret := "target triple = \"x86_64-pc-linux-gnu\"\n\n"
 
 	// Declare library functions
 	ret += "declare ptr @malloc(i64)\n"
-	ret += "declare void @free(ptr)\n\n"
+	ret += "declare void @free(ptr)\n"
+	ret += "declare i32 @printf(ptr, ...)\n"
+	ret += "declare i32 @scanf(ptr, ...)\n\n"
+
+	// Define format strings
+	ret += "@" + printStrName +
+		" = private unnamed_addr constant [5 x i8] c\"%ld \\00\", align 1\n"
+
+	ret += "@" + printlnStrName +
+		" = private unnamed_addr constant [5 x i8] c\"%ld\\0a\\00\", align 1\n\n"
 
 	// Declare structs
 	for k, v := range p.Structs {

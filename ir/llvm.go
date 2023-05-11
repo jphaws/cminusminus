@@ -67,17 +67,32 @@ func (c CallInstr) instrFunc() {}
 func (c CallInstr) String() string {
 	args := make([]string, len(c.Arguments))
 
+	// Only print a target if it exists
+	target := ""
+	if c.Target != nil {
+		target = fmt.Sprintf("%v = ", c.Target)
+	}
+
+	// Fill argument strings list
 	for i, v := range c.Arguments {
 		args[i] = fmt.Sprintf("%v %v", v.GetType(), v)
 	}
 
+	// Handle variadic argument types (if needed)
 	vari := ""
-	if c.Variadic != 0 {
-		vari = fmt.Sprintf(" (%v, ...)", strings.Join(args[:c.Variadic], ", "))
+	if c.Variadic > 0 {
+		variTypes := (make([]string, c.Variadic))
+
+		for i := 0; i < c.Variadic; i++ {
+			variTypes[i] = fmt.Sprintf("%v", c.Arguments[i].GetType())
+		}
+
+		vari = fmt.Sprintf(" (%v, ...)", strings.Join(variTypes, ", "))
 	}
 
-	return fmt.Sprintf("%v = call %v%v %v(%v)",
-		c.Target, c.ReturnType, vari, c.FnName, strings.Join(args, ", "))
+	// Create full string output
+	return fmt.Sprintf("%vcall %v%v %v(%v)",
+		target, c.ReturnType, vari, c.FnName, strings.Join(args, ", "))
 }
 
 type RetInstr struct {
@@ -133,6 +148,7 @@ const (
 	DivOperator = "sdiv"
 	AndOperator = "and"
 	OrOperator  = "or"
+	XorOperator = "xor"
 )
 
 func (o Operator) String() string {
@@ -214,21 +230,48 @@ func (v VoidType) String() string {
 }
 
 // === AST to LLVM (statements) ===
-func statementToLlvm(stmt ast.Statement) []Instr {
-	switch stmt.(type) {
+func statementToLlvm(stmt ast.Statement, locals map[string]*Register) []Instr {
+	switch v := stmt.(type) {
 	case *ast.AssignmentStatement:
 		return nil
 	case *ast.PrintStatement:
-		return nil
+		return printStatementToLlvm(v, locals)
 	case *ast.DeleteStatement:
 		return nil
-	case *ast.ReturnStatement:
-		return nil
 	case *ast.InvocationStatement:
-		return nil
+		ret, _ := invocationExpressionToLlvm(&v.Expression, locals, false)
+		return ret
 	}
 
-	panic("Trying to process incorrect statement")
+	panic(fmt.Sprintf("Could not process statement of type %T", stmt))
+}
+
+func printStatementToLlvm(prnt *ast.PrintStatement, locals map[string]*Register) []Instr {
+	// Process expression
+	instrs, val := expressionToLlvm(prnt.Expression, locals)
+
+	// Select relevant format string
+	format := "@"
+	if prnt.Newline {
+		format += printlnStrName
+	} else {
+		format += printStrName
+	}
+
+	instrs = append(instrs, &CallInstr{
+		FnName: "@printf",
+		ReturnType: &IntType{32},
+		Arguments: []Value{
+			&Literal{
+				Value: format,
+				Type: &PointerType{&IntType{8}},
+			},
+			val,
+		},
+		Variadic: 1,
+	})
+
+	return instrs
 }
 
 func returnStatementToLlvm(ret *ast.ReturnStatement, funcExit *Block, locals map[string]*Register) []Instr {
@@ -262,7 +305,7 @@ func expressionToLlvm(expr ast.Expression, locals map[string]*Register) (instrs 
 
 	switch v := expr.(type) {
 	case *ast.InvocationExpression:
-		return invocationExpressionToLlvm(v, locals)
+		return invocationExpressionToLlvm(v, locals, true)
 	case *ast.DotExpression:
 		return
 	case *ast.UnaryExpression:
@@ -287,7 +330,7 @@ func expressionToLlvm(expr ast.Expression, locals map[string]*Register) (instrs 
 }
 
 func invocationExpressionToLlvm(inv *ast.InvocationExpression,
-	locals map[string]*Register) (instrs []Instr, val Value) {
+	locals map[string]*Register, isExpr bool) (instrs []Instr, val Value) {
 
 	instrs = make([]Instr, 0)
 	args := make([]Value, len(inv.Arguments))
@@ -302,19 +345,24 @@ func invocationExpressionToLlvm(inv *ast.InvocationExpression,
 	// Get return type
 	retType := functionTable[inv.Name].ReturnType
 
-	// Build call instruction
-	val = &Register{
-		Name: getNextReg(),
-		Type: retType,
+	// Create target register (if needed)
+	var target *Register
+	if isExpr {
+		target = &Register{
+			Name: getNextReg(),
+			Type: retType,
+		}
 	}
 
+	// Build call instruction
 	instrs = append(instrs, &CallInstr{
-		Target:     val.(*Register),
+		Target:     target,
 		FnName:     "@" + inv.Name,
 		ReturnType: retType,
 		Arguments:  args,
 	})
 
+	val = target
 	return
 }
 
@@ -344,16 +392,12 @@ func binaryExpressionToLlvm(bin *ast.BinaryExpression,
 	return
 }
 
-/*
-const (
+/* UNSUPPORTED OPERATIONS:
 	// Unary
 	NotOperator Operator = "!"
 
 	// Binary
-	TimesOperator        = "*"
-	DivideOperator       = "/"
-	PlusOperator         = "+"
-	MinusOperator        = "-" // Also unary
+	MinusOperator        = "-" // Unary unsupported
 	LessThanOperator     = "<"
 	GreaterThanOperator  = ">"
 	LessEqualOperator    = "<="
@@ -362,7 +406,6 @@ const (
 	NotEqualOperator     = "!="
 	AndOperator          = "&&"
 	OrOperator           = "||"
-)
 */
 
 func identifierExpressionToLlvm(ident *ast.IdentifierExpression,
