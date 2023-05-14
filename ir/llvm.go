@@ -2,6 +2,7 @@ package ir
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/keen-cp/compiler-project-c/ast"
@@ -52,6 +53,20 @@ func (s StoreInstr) instrFunc() {}
 func (s StoreInstr) String() string {
 	memType := s.Mem.GetType().(*PointerType)
 	return fmt.Sprintf("store %v %v, %v %v", s.Reg.GetType(), s.Reg, memType, s.Mem)
+}
+
+type GepInstr struct {
+	Target *Register
+	Base   *Register
+	Index  int
+}
+
+func (g GepInstr) instrFunc() {}
+
+func (g GepInstr) String() string {
+	targetType := g.Base.GetType().(*PointerType).TargetType
+	return fmt.Sprintf("%v = getelementptr %%struct.%v, ptr %v, i32 0, i32 %v",
+		g.Target, targetType, g.Base, g.Index)
 }
 
 type CallInstr struct {
@@ -300,7 +315,7 @@ func statementToLlvm(stmt ast.Statement, locals map[string]*Register) []Instr {
 	case *ast.PrintStatement:
 		return printStatementToLlvm(v, locals)
 	case *ast.DeleteStatement:
-		return nil
+		return deleteStatementToLlvm(v, locals)
 	case *ast.InvocationStatement:
 		ret, _ := invocationExpressionToLlvm(&v.Expression, locals, false)
 		return ret
@@ -310,23 +325,81 @@ func statementToLlvm(stmt ast.Statement, locals map[string]*Register) []Instr {
 }
 
 func assignmentStatementToLlvm(asgn *ast.AssignmentStatement, locals map[string]*Register) []Instr {
-	// TODO handle DotLValue
-	targetName := asgn.Target.(*ast.NameLValue).Name
-
-	target := lookupSymbol(targetName, locals)
+	instrs, target := lValueToLlvm(asgn.Target, locals)
 
 	// Read from stdin (if read assignment)
 	if asgn.Source == nil {
-		return readToLlvm(target)
+		readInstrs := readToLlvm(target)
+		instrs = append(instrs, readInstrs...)
+		return instrs
 	}
 
 	// Otherwise, process expression
-	instrs, val := expressionToLlvm(asgn.Source, locals, false)
+	expInstrs, val := expressionToLlvm(asgn.Source, locals, false)
+	instrs = append(instrs, expInstrs...)
 
 	return append(instrs, &StoreInstr{
 		Mem: target,
 		Reg: val,
 	})
+}
+
+func lValueToLlvm(lval ast.LValue, locals map[string]*Register) (instrs []Instr, reg *Register) {
+	switch v := lval.(type) {
+	case *ast.NameLValue:
+		// Base case
+		reg = lookupSymbol(v.Name, locals)
+
+	case *ast.DotLValue:
+		// Recurse on left side
+		var ptr *Register
+		instrs, ptr = lValueToLlvm(v.Left, locals)
+
+		// Create base register (pointer to start of struct)
+		base := &Register{
+			Name: getNextReg(),
+			Type: ptr.GetType().(*PointerType).TargetType,
+		}
+
+		// Load base pointer
+		instrs = append(instrs, &LoadInstr{
+			Reg: base,
+			Mem: ptr,
+		})
+
+		// Get field pointer
+		var fieldInstrs []Instr
+		fieldInstrs, reg = getFieldPointer(base, v.Name)
+		instrs = append(instrs, fieldInstrs...)
+	}
+
+	return
+}
+
+func getFieldPointer(base *Register, fieldName string) (instrs []Instr, field *Register) {
+	// Get struct ID
+	id := base.GetType().(*PointerType).TargetType.(*StructType).Id
+
+	// Get information for the relevant struct field
+	f, _ := structTable[id].Fields.Get(fieldName)
+
+	// Create field register (pointer to field in struct)
+	field = &Register{
+		Name: getNextReg(),
+		Type: &PointerType{f.Type},
+	}
+
+	// Load base pointer and move pointer forward to field
+	instrs = append(
+		instrs,
+		&GepInstr{
+			Target: field,
+			Base:   base,
+			Index:  f.Index,
+		},
+	)
+
+	return
 }
 
 func readToLlvm(target *Register) []Instr {
@@ -374,6 +447,19 @@ func printStatementToLlvm(prnt *ast.PrintStatement, locals map[string]*Register)
 	return instrs
 }
 
+func deleteStatementToLlvm(del *ast.DeleteStatement, locals map[string]*Register) []Instr {
+
+	instrs, reg := expressionToLlvm(del.Expression, locals, false)
+
+	instrs = append(instrs, &CallInstr{
+		FnName:     "@free",
+		ReturnType: &VoidType{},
+		Arguments:  []Value{reg},
+	})
+
+	return instrs
+}
+
 func returnStatementToLlvm(ret *ast.ReturnStatement, funcExit *Block, locals map[string]*Register) []Instr {
 	jump := &BranchInstr{
 		Next: funcExit,
@@ -406,7 +492,7 @@ func expressionToLlvm(expr ast.Expression, locals map[string]*Register,
 	case *ast.InvocationExpression:
 		return invocationExpressionToLlvm(v, locals, true)
 	case *ast.DotExpression:
-		return
+		return dotExpressionToLlvm(v, locals)
 	case *ast.UnaryExpression:
 		return unaryExpressionToLlvm(v, locals, isGuard)
 	case *ast.BinaryExpression:
@@ -416,13 +502,13 @@ func expressionToLlvm(expr ast.Expression, locals map[string]*Register,
 	case *ast.IntExpression:
 		val = intExpressionToLlvm(v)
 	case *ast.TrueExpression:
-		val = trueExpressionToLlvm()
+		val = trueExpressionToLlvm(isGuard)
 	case *ast.FalseExpression:
-		val = falseExpressionToLlvm()
+		val = falseExpressionToLlvm(isGuard)
 	case *ast.NewExpression:
-		return
+		return newExpressionToLlvm(v)
 	case *ast.NullExpression:
-		return
+		val = nullExpressionToLlvm()
 	}
 
 	return
@@ -464,12 +550,36 @@ func invocationExpressionToLlvm(inv *ast.InvocationExpression,
 	return
 }
 
+func dotExpressionToLlvm(dot *ast.DotExpression,
+	locals map[string]*Register) (instrs []Instr, val Value) {
+
+	// Evaluate left expression
+	instrs, lVal := expressionToLlvm(dot.Left, locals, false)
+
+	// Get field pointer
+	fieldInstrs, field := getFieldPointer(lVal.(*Register), dot.Field)
+	instrs = append(instrs, fieldInstrs...)
+
+	// Load value from field pointer
+	val = &Register{
+		Name: getNextReg(),
+		Type: field.GetType().(*PointerType).TargetType,
+	}
+
+	instrs = append(instrs, &LoadInstr{
+		Reg: val.(*Register),
+		Mem: field,
+	})
+
+	return
+}
+
 func unaryExpressionToLlvm(una *ast.UnaryExpression,
 	locals map[string]*Register, isGuard bool) (instrs []Instr, val Value) {
 
 	switch una.Operator {
 	case ast.NotOperator:
-		return notOpToLlvm(una, locals)
+		return notOpToLlvm(una, locals, isGuard)
 	case ast.MinusOperator:
 		return minusOpToLlvm(una, locals)
 	}
@@ -477,8 +587,36 @@ func unaryExpressionToLlvm(una *ast.UnaryExpression,
 	return
 }
 
-// TODO: Implement not operation
-func notOpToLlvm(not *ast.UnaryExpression, locals map[string]*Register) (instrs []Instr, val Value) {
+func notOpToLlvm(not *ast.UnaryExpression,
+	locals map[string]*Register, isGuard bool) (instrs []Instr, val Value) {
+
+	// Select desired width
+	width := 64
+	if isGuard {
+		width = 1
+	}
+
+	// Process operand expression
+	instrs, oVal := expressionToLlvm(not.Operand, locals, isGuard)
+
+	// Truncate expression (if needed)
+	var convInstrs []Instr
+	convInstrs, oVal = convertBoolWidth(oVal, isGuard)
+	instrs = append(instrs, convInstrs...)
+
+	// Create not instruction (1 ^ value)
+	val = &Register{
+		Name: getNextReg(),
+		Type: &IntType{width},
+	}
+
+	instrs = append(instrs, &BinaryInstr{
+		Target:   val.(*Register),
+		Operator: XorOperator,
+		Op1:      trueExpressionToLlvm(isGuard),
+		Op2:      oVal,
+	})
+
 	return
 }
 
@@ -509,8 +647,8 @@ func binaryExpressionToLlvm(bin *ast.BinaryExpression,
 	locals map[string]*Register, isGuard bool) (instrs []Instr, val Value) {
 
 	// Process left and right expressions
-	instrs, lVal := expressionToLlvm(bin.Left, locals, false)
-	rInstrs, rVal := expressionToLlvm(bin.Right, locals, false)
+	instrs, lVal := expressionToLlvm(bin.Left, locals, isGuard)
+	rInstrs, rVal := expressionToLlvm(bin.Right, locals, isGuard)
 
 	instrs = append(instrs, rInstrs...)
 
@@ -519,6 +657,20 @@ func binaryExpressionToLlvm(bin *ast.BinaryExpression,
 
 	switch v := condOp.(type) {
 	case Operator:
+		// Truncate expressions (if needed)
+		switch v {
+		case AndOperator:
+			fallthrough
+
+		case OrOperator:
+			var convInstrs []Instr
+			convInstrs, lVal = convertBoolWidth(lVal, isGuard)
+			instrs = append(instrs, convInstrs...)
+
+			convInstrs, rVal = convertBoolWidth(rVal, isGuard)
+			instrs = append(instrs, convInstrs...)
+		}
+
 		// Use a binary instruction for arithmetic/boolean
 		val = &Register{
 			Name: getNextReg(),
@@ -547,13 +699,9 @@ func binaryExpressionToLlvm(bin *ast.BinaryExpression,
 		})
 
 		// Width-extend the bool if needed
-		if isGuard {
-			val = reg
-		} else {
-			var convInstr Instr
-			convInstr, val = boolExtend(reg)
-			instrs = append(instrs, convInstr)
-		}
+		var convInstrs []Instr
+		convInstrs, val = convertBoolWidth(reg, isGuard)
+		instrs = append(instrs, convInstrs...)
 	}
 
 	return
@@ -583,24 +731,59 @@ func intExpressionToLlvm(tin *ast.IntExpression) *Literal {
 	}
 }
 
-func trueExpressionToLlvm() *Literal {
+func trueExpressionToLlvm(isGuard bool) *Literal {
+	width := 64
+	if isGuard {
+		width = 1
+	}
+
 	return &Literal{
 		Value: "1",
-		Type:  &IntType{64},
+		Type:  &IntType{width},
 	}
 }
 
-func falseExpressionToLlvm() *Literal {
+func falseExpressionToLlvm(isGuard bool) *Literal {
+	width := 64
+	if isGuard {
+		width = 1
+	}
+
 	return &Literal{
 		Value: "0",
-		Type:  &IntType{64},
+		Type:  &IntType{width},
 	}
 }
 
-/*
 func newExpressionToLlvm(nw *ast.NewExpression) (instrs []Instr, val Value) {
+	size := structTable[nw.Id].Size
+
+	val = &Register{
+		Name: getNextReg(),
+		Type: &PointerType{&StructType{nw.Id}},
+	}
+
+	instrs = append(instrs, &CallInstr{
+		Target:     val.(*Register),
+		FnName:     "@malloc",
+		ReturnType: val.GetType(),
+		Arguments: []Value{
+			&Literal{
+				Value: strconv.Itoa(size),
+				Type:  &IntType{64},
+			},
+		},
+	})
+
+	return
 }
-*/
+
+func nullExpressionToLlvm() Value {
+	return &Literal{
+		Value: "null",
+		Type:  &PointerType{},
+	}
+}
 
 func lookupSymbol(name string, locals map[string]*Register) *Register {
 	var ret *Register
@@ -614,7 +797,46 @@ func lookupSymbol(name string, locals map[string]*Register) *Register {
 	return ret
 }
 
-func boolExtend(src *Register) (instr *ConvInstr, reg *Register) {
+func convertBoolWidth(src Value, isGuard bool) (instrs []Instr, val Value) {
+	// Select desired width
+	desiredWidth := 64
+	if isGuard {
+		desiredWidth = 1
+	}
+
+	// Transparently convert bool literals
+	switch v := src.(type) {
+	case *Literal:
+		val = &Literal{
+			Value: v.Value,
+			Type:  &IntType{desiredWidth},
+		}
+
+	case *Register:
+		width := src.GetType().(*IntType).Width
+
+		// Truncate registers (if needed)
+		if width > desiredWidth {
+			var convInstr Instr
+			convInstr, val = boolTruncReg(v)
+			instrs = append(instrs, convInstr)
+
+			// Or extend registers (if needed)
+		} else if width < desiredWidth {
+			var convInstr Instr
+			convInstr, val = boolExtendReg(v)
+			instrs = append(instrs, convInstr)
+
+			// Otherwise, don't convert
+		} else {
+			val = src
+		}
+	}
+
+	return
+}
+
+func boolExtendReg(src *Register) (instr Instr, reg *Register) {
 	reg = &Register{
 		Name: getNextReg(),
 		Type: &IntType{64},
@@ -629,7 +851,7 @@ func boolExtend(src *Register) (instr *ConvInstr, reg *Register) {
 	return
 }
 
-func boolTrunc(src *Register) (instr *ConvInstr, reg *Register) {
+func boolTruncReg(src *Register) (instr Instr, reg *Register) {
 	reg = &Register{
 		Name: getNextReg(),
 		Type: &IntType{1},
@@ -644,30 +866,15 @@ func boolTrunc(src *Register) (instr *ConvInstr, reg *Register) {
 	return
 }
 
-// Only call this function on a guard expression!
 func createGuardLlvm(guard ast.Expression,
 	locals map[string]*Register) (instrs []Instr, val Value) {
 
 	// Process guard expression
 	instrs, guardVal := expressionToLlvm(guard, locals, true)
 
-	// Transparently truncate bool literals
-	if v, ok := guardVal.(*Literal); ok {
-		val = &Literal{
-			Value: v.Value,
-			Type:  &IntType{1},
-		}
-		return
-	}
-
-	// Truncate register bools if needed
-	if guardVal.GetType().(*IntType).Width > 1 {
-		var convInstr Instr
-		convInstr, val = boolTrunc(guardVal.(*Register))
-		instrs = append(instrs, convInstr)
-	} else {
-		val = guardVal
-	}
+	// Truncate if needed
+	convInstrs, val := convertBoolWidth(guardVal, true)
+	instrs = append(instrs, convInstrs...)
 
 	return
 }

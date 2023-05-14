@@ -299,7 +299,9 @@ func processWhileStatement(whl *ast.WhileStatement, curr *Block,
 	// Add extra whlguard type to the current block
 	curr.types = append(curr.types, &whileGuardBlock{count})
 
-	// TODO: Add guard instructions
+	// Add guard instructions
+	guardInstrs, guardVal := createGuardLlvm(whl.Guard, locals)
+	curr.Instrs = append(curr.Instrs, guardInstrs...)
 
 	// Create whlexit block (prev: curr, dynamic)
 	whileExit = createBlock(fn, &whileExitBlock{count}, make([]*Block, 0, 2))
@@ -311,6 +313,9 @@ func processWhileStatement(whl *ast.WhileStatement, curr *Block,
 	whileEntry.Prev = append(whileEntry.Prev, curr)
 	curr.Next = whileEntry
 
+	// Add branch instruction
+	curr.Instrs = append(curr.Instrs, createBranch(guardVal, whileEntry, whileExit))
+
 	// Process while statements
 	whileGuard, rcount := processStatements(whl.Body.Statements, whileEntry, funcExit, locals, count)
 
@@ -319,6 +324,10 @@ func processWhileStatement(whl *ast.WhileStatement, curr *Block,
 		// Add extra whlguard type to the final body block
 		whileGuard.types = append(whileGuard.types, &whileGuardBlock{count})
 
+		// Add guard instructions
+		guardInstrs, guardVal = createGuardLlvm(whl.Guard, locals)
+		whileGuard.Instrs = append(whileGuard.Instrs, guardInstrs...)
+
 		// Create backedge
 		whileGuard.Next = whileEntry
 		whileEntry.Prev = append(whileEntry.Prev, whileGuard)
@@ -326,6 +335,8 @@ func processWhileStatement(whl *ast.WhileStatement, curr *Block,
 		// Link guard to whlexit
 		whileGuard.Els = whileExit
 		whileExit.Prev = append(whileExit.Prev, whileGuard)
+
+		whileGuard.Instrs = append(whileGuard.Instrs, createBranch(guardVal, whileEntry, whileExit))
 	}
 
 	return

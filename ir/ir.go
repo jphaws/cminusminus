@@ -9,8 +9,8 @@ import (
 	om "github.com/wk8/go-ordered-map/v2"
 )
 
-// (struct) 'Id' -> [field 'Name' -> Type]
-var structTable = map[string]*om.OrderedMap[string, Type]{}
+// (struct) 'Id' -> Struct
+var structTable = map[string]*Struct{}
 
 // 'Name' -> Register
 var symbolTable = map[string]*Register{}
@@ -19,9 +19,19 @@ var symbolTable = map[string]*Register{}
 var functionTable = map[string]*Function{}
 
 type ProgramIr struct {
-	Structs   map[string]*om.OrderedMap[string, Type]
+	Structs   map[string]*Struct
 	Globals   map[string]*Register
 	Functions map[string]*Function
+}
+
+type Struct struct {
+	Fields *om.OrderedMap[string, *Field]
+	Size   int
+}
+
+type Field struct {
+	Type  Type
+	Index int
 }
 
 type Function struct {
@@ -31,6 +41,8 @@ type Function struct {
 }
 
 const (
+	intSize        = 8
+	pointerSize    = 8
 	printStrName   = "_print"
 	printlnStrName = "_println"
 	scanStrName    = "_scan"
@@ -51,10 +63,10 @@ func (p ProgramIr) ToLlvm() string {
 		" = private unnamed_addr constant [5 x i8] c\"%ld \\00\", align 1\n"
 
 	ret += "@" + printlnStrName +
-		" = private unnamed_addr constant [5 x i8] c\"%ld\\0a\\00\", align 1\n\n"
+		" = private unnamed_addr constant [5 x i8] c\"%ld\\0a\\00\", align 1\n"
 
 	ret += "@" + scanStrName +
-		" = private unnamed_addr constant [4 x i8] c\"%ld\\00\", align 1\n"
+		" = private unnamed_addr constant [4 x i8] c\"%ld\\00\", align 1\n\n"
 
 	// Declare structs
 	for k, v := range p.Structs {
@@ -76,7 +88,9 @@ func (p ProgramIr) ToLlvm() string {
 	return ret
 }
 
-func structToLlvm(id string, fields *om.OrderedMap[string, Type]) string {
+func structToLlvm(id string, st *Struct) string {
+	fields := st.Fields
+
 	// Start with "struct" type declaration
 	ret := fmt.Sprintf("%%struct.%v = type {", id)
 
@@ -84,7 +98,7 @@ func structToLlvm(id string, fields *om.OrderedMap[string, Type]) string {
 	fieldStrs := make([]string, 0, fields.Len())
 
 	for pair := fields.Oldest(); pair != nil; pair = pair.Next() {
-		fieldStrs = append(fieldStrs, fmt.Sprintf("%v", pair.Value))
+		fieldStrs = append(fieldStrs, fmt.Sprintf("%v", pair.Value.Type))
 	}
 
 	// Add all field types to declaration
@@ -101,7 +115,7 @@ func globalToLlvm(name string, reg *Register) string {
 	init := "0"
 
 	if _, ok := typ.TargetType.(*PointerType); ok {
-		init = "inttoptr(i64 0 to ptr)"
+		init = "null"
 	}
 
 	// Create declaration
@@ -158,13 +172,22 @@ func CreateIr(root *ast.Root, tables *ast.Tables) *ProgramIr {
 
 	// Convert struct table (llvm-ify)
 	for k, v := range tables.StructTable {
-		omap := om.New[string, Type]()
+		omap := om.New[string, *Field]()
 
+		i := 0
 		for pair := v.Oldest(); pair != nil; pair = pair.Next() {
-			omap.Set(pair.Key, typeToLlvm(pair.Value))
+			omap.Set(pair.Key, &Field{
+				Type:  typeToLlvm(pair.Value),
+				Index: i,
+			})
+
+			i++
 		}
 
-		structTable[k] = omap
+		structTable[k] = &Struct{
+			Fields: omap,
+			Size:   computeStructSize(omap),
+		}
 	}
 
 	// Convert symbol table
@@ -190,9 +213,14 @@ func CreateIr(root *ast.Root, tables *ast.Tables) *ProgramIr {
 	}
 
 	// Synchronize completed routines
+	fns := make([]*Function, 0, len(root.Functions))
 	for range root.Functions {
-		fn := <-funcChan
-		functionTable[fn.Cfg.function] = fn
+		fns = append(fns, <-funcChan)
+	}
+
+	// Create function table
+	for _, v := range fns {
+		functionTable[v.Cfg.function] = v
 	}
 
 	return &ProgramIr{
@@ -200,4 +228,20 @@ func CreateIr(root *ast.Root, tables *ast.Tables) *ProgramIr {
 		Globals:   symbolTable,
 		Functions: functionTable,
 	}
+}
+
+func computeStructSize(omap *om.OrderedMap[string, *Field]) int {
+	size := 0
+
+	for pair := omap.Oldest(); pair != nil; pair = pair.Next() {
+		typ := pair.Value.Type
+
+		if _, ok := typ.(*IntType); ok {
+			size += intSize
+		} else {
+			size += pointerSize
+		}
+	}
+
+	return size
 }
