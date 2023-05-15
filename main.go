@@ -73,6 +73,8 @@ func main() {
 	var output string
 	if opts.graph {
 		output = rep.ToDot()
+	} else if opts.defUse {
+		output = rep.UseDef()
 	} else {
 		output = rep.ToLlvm()
 	}
@@ -93,6 +95,7 @@ func main() {
 type Options struct {
 	outputFile string
 	graph      bool
+	defUse     bool
 	stackIr    bool
 }
 
@@ -109,6 +112,7 @@ func parseArgs() (opts Options, args []string) {
 	flags.StringVar(&opts.outputFile, "o", "", "output to `filename`")
 	flags.BoolVar(&opts.stackIr, "stack", false, "use a stack-based intermediate representation")
 	flags.BoolVar(&opts.graph, "graph", false, "output a control flow graph in the dot language")
+	flags.BoolVar(&opts.defUse, "def-use", false, "output def-use chains for each function")
 
 	// Parse flags
 	err := flags.Parse(os.Args[1:])
@@ -121,6 +125,11 @@ func parseArgs() (opts Options, args []string) {
 	// Check for correct number of positional arguments
 	if len(args) != 1 {
 		fmt.Fprintln(os.Stderr, "mc: no input file specified")
+		os.Exit(2)
+	}
+
+	if opts.graph && opts.defUse {
+		fmt.Fprintln(os.Stderr, "mc: only one output mode allowed")
 		os.Exit(2)
 	}
 

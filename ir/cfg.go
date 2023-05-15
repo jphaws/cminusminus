@@ -9,9 +9,12 @@ import (
 type Block struct {
 	function string
 	types    []blockType
+	sealed   bool
+	context  map[string]Value
 	Prev     []*Block
 	Next     *Block
 	Els      *Block
+	Phis     []*PhiInstr
 	Instrs   []Instr
 }
 
@@ -173,6 +176,7 @@ func processFunction(fn *ast.Function, ch chan *Function) {
 	ret := &Function{
 		Parameters: params,
 		ReturnType: typeToLlvm(fn.ReturnType),
+		Registers:  locals,
 		Cfg:        entry,
 	}
 

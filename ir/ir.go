@@ -37,6 +37,7 @@ type Field struct {
 type Function struct {
 	Parameters []*Register
 	ReturnType Type
+	Registers  map[string]*Register
 	Cfg        *Block
 }
 
@@ -165,6 +166,36 @@ func (b *Block) toLlvm() string {
 	}
 
 	return ret
+}
+
+func (p ProgramIr) UseDef() string {
+	ret := ""
+
+	for name, fn := range p.Functions {
+		ret += "=== " + name + " ===\n"
+
+		for _, reg := range fn.Registers {
+			ret += regUseDef(reg)
+		}
+	}
+
+	return ret
+}
+
+func regUseDef(reg *Register) string {
+	ret := ""
+
+	if reg.Def != nil {
+		ret += fmt.Sprintf("%v\n", reg.Def)
+	} else {
+		ret += fmt.Sprintf("%v not defined\n", reg.Name)
+	}
+
+	for _, use := range reg.Uses {
+		ret += fmt.Sprintf("\t%v\n", use)
+	}
+
+	return ret + "\n"
 }
 
 func CreateIr(root *ast.Root, tables *ast.Tables) *ProgramIr {
