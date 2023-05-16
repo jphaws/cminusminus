@@ -152,6 +152,10 @@ func (b *Block) toLlvm() string {
 	// Process the current block
 	ret := b.Label() + ":\n"
 
+	for _, v := range b.Phis {
+		ret += fmt.Sprintf("  %v\n", v)
+	}
+
 	for _, v := range b.Instrs {
 		ret += fmt.Sprintf("  %v\n", v)
 	}

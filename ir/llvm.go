@@ -170,7 +170,6 @@ func (c ConvInstr) String() string {
 		c.Target, c.Conversion, c.Src.GetType(), c.Src, c.Target.GetType())
 }
 
-// TODO: Figure out what this should *actually* store
 type PhiInstr struct {
 	Target *Register
 	Values []*PhiVal
@@ -184,7 +183,14 @@ type PhiVal struct {
 func (p PhiInstr) instrFunc() {}
 
 func (p PhiInstr) String() string {
-	return fmt.Sprintf("%v = phi %v", p.Target, p.Values[0].Value.GetType()) // TODO: Finish this
+	values := make([]string, 0, len(p.Values))
+
+	for _, v := range p.Values {
+		values = append(values, fmt.Sprintf("[%v, %%%v]", v.Value, v.Block.Label()))
+	}
+
+	return fmt.Sprintf("%v = phi %v %v",
+		p.Target, p.Values[0].Value.GetType(), strings.Join(values, ", "))
 }
 
 // === Conversions ===

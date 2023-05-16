@@ -31,6 +31,9 @@ func processBlock(block *Block, graph *dot.Escape, fn string) {
 
 	// Generate block label (for dot)
 	body := "\"{" + label + "|"
+	for _, v := range block.Phis {
+		body += fmt.Sprintf("%v\\l", v)
+	}
 	for _, v := range block.Instrs {
 		body += fmt.Sprintf("%v\\l", v)
 	}

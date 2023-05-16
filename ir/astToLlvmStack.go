@@ -5,7 +5,7 @@ import (
 )
 
 // === Statements ===
-func assignmentStatementToLlvmStack(asgn *ast.AssignmentStatement,
+func assignmentStatementToLlvmStack(asgn *ast.AssignmentStatement, curr *Block,
 	locals map[string]*Register) []Instr {
 
 	instrs, target := lValueToLlvmStack(asgn.Target, locals)
@@ -18,7 +18,7 @@ func assignmentStatementToLlvmStack(asgn *ast.AssignmentStatement,
 	}
 
 	// Otherwise, process expression
-	expInstrs, val := expressionToLlvm(asgn.Source, locals, false)
+	expInstrs, val := expressionToLlvm(asgn.Source, curr, locals, false)
 	instrs = append(instrs, expInstrs...)
 
 	store := &StoreInstr{
@@ -69,7 +69,9 @@ func lValueToLlvmStack(lval ast.LValue,
 	return
 }
 
-func returnStatementToLlvmStack(ret *ast.ReturnStatement, funcExit *Block, locals map[string]*Register) []Instr {
+func returnStatementToLlvmStack(ret *ast.ReturnStatement, curr *Block,
+	funcExit *Block, locals map[string]*Register) []Instr {
+
 	jump := createJump(funcExit)
 
 	// Check for a void return
@@ -78,7 +80,7 @@ func returnStatementToLlvmStack(ret *ast.ReturnStatement, funcExit *Block, local
 	}
 
 	// Process expression
-	instrs, val := expressionToLlvm(ret.Expression, locals, false)
+	instrs, val := expressionToLlvm(ret.Expression, curr, locals, false)
 
 	// Store expression value and jump to exit block
 	store := &StoreInstr{
@@ -96,11 +98,12 @@ func identifierExpressionToLlvmStack(ident *ast.IdentifierExpression,
 
 	mem := lookupSymbol(ident.Name, locals)
 
+	name := nextRegName()
 	reg := &Register{
-		Name: nextRegName(),
+		Name: name,
 		Type: mem.GetType().(*PointerType).TargetType,
 	}
-	locals[reg.Name] = reg
+	locals[name] = reg
 
 	load := &LoadInstr{
 		Reg: reg,

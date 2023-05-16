@@ -15,20 +15,20 @@ const (
 var regNum = 0
 
 // === Statements ===
-func statementToLlvm(stmt ast.Statement, locals map[string]*Register) []Instr {
+func statementToLlvm(stmt ast.Statement, curr *Block, locals map[string]*Register) []Instr {
 	switch v := stmt.(type) {
 	case *ast.AssignmentStatement:
 		if stackLlvm {
-			return assignmentStatementToLlvmStack(v, locals)
+			return assignmentStatementToLlvmStack(v, curr, locals)
 		} else {
 			panic("Reg-based assignment not implemented!")
 		}
 	case *ast.PrintStatement:
-		return printStatementToLlvm(v, locals)
+		return printStatementToLlvm(v, curr, locals)
 	case *ast.DeleteStatement:
-		return deleteStatementToLlvm(v, locals)
+		return deleteStatementToLlvm(v, curr, locals)
 	case *ast.InvocationStatement:
-		ret, _ := invocationExpressionToLlvm(&v.Expression, locals, false)
+		ret, _ := invocationExpressionToLlvm(&v.Expression, curr, locals, false)
 		return ret
 	}
 
@@ -84,9 +84,11 @@ func readToLlvm(target *Register) []Instr {
 	return []Instr{call}
 }
 
-func printStatementToLlvm(prnt *ast.PrintStatement, locals map[string]*Register) []Instr {
+func printStatementToLlvm(prnt *ast.PrintStatement,
+	curr *Block, locals map[string]*Register) []Instr {
+
 	// Process expression
-	instrs, val := expressionToLlvm(prnt.Expression, locals, false)
+	instrs, val := expressionToLlvm(prnt.Expression, curr, locals, false)
 
 	// Select relevant format string
 	format := "@"
@@ -113,9 +115,10 @@ func printStatementToLlvm(prnt *ast.PrintStatement, locals map[string]*Register)
 	return append(instrs, call)
 }
 
-func deleteStatementToLlvm(del *ast.DeleteStatement, locals map[string]*Register) []Instr {
+func deleteStatementToLlvm(del *ast.DeleteStatement,
+	curr *Block, locals map[string]*Register) []Instr {
 
-	instrs, reg := expressionToLlvm(del.Expression, locals, false)
+	instrs, reg := expressionToLlvm(del.Expression, curr, locals, false)
 
 	call := &CallInstr{
 		FnName:     "@free",
@@ -128,23 +131,23 @@ func deleteStatementToLlvm(del *ast.DeleteStatement, locals map[string]*Register
 }
 
 // === Expressions ===
-func expressionToLlvm(expr ast.Expression, locals map[string]*Register,
+func expressionToLlvm(expr ast.Expression, curr *Block, locals map[string]*Register,
 	isGuard bool) (instrs []Instr, val Value) {
 
 	switch v := expr.(type) {
 	case *ast.InvocationExpression:
-		return invocationExpressionToLlvm(v, locals, true)
+		return invocationExpressionToLlvm(v, curr, locals, true)
 	case *ast.DotExpression:
-		return dotExpressionToLlvm(v, locals)
+		return dotExpressionToLlvm(v, curr, locals)
 	case *ast.UnaryExpression:
-		return unaryExpressionToLlvm(v, locals, isGuard)
+		return unaryExpressionToLlvm(v, curr, locals, isGuard)
 	case *ast.BinaryExpression:
-		return binaryExpressionToLlvm(v, locals, isGuard)
+		return binaryExpressionToLlvm(v, curr, locals, isGuard)
 	case *ast.IdentifierExpression:
 		if stackLlvm {
 			return identifierExpressionToLlvmStack(v, locals)
 		} else {
-			panic("Reg-based identifiers not implemented!")
+			return identifierExpressionToLlvmReg(v, curr, locals)
 		}
 	case *ast.IntExpression:
 		val = intExpressionToLlvm(v)
@@ -161,14 +164,14 @@ func expressionToLlvm(expr ast.Expression, locals map[string]*Register,
 	return
 }
 
-func invocationExpressionToLlvm(inv *ast.InvocationExpression,
+func invocationExpressionToLlvm(inv *ast.InvocationExpression, curr *Block,
 	locals map[string]*Register, isExpr bool) (instrs []Instr, val Value) {
 
 	args := make([]Value, 0, len(inv.Arguments))
 
 	// Evaluate arguments
 	for _, v := range inv.Arguments {
-		argInstrs, argVal := expressionToLlvm(v, locals, false)
+		argInstrs, argVal := expressionToLlvm(v, curr, locals, false)
 		instrs = append(instrs, argInstrs...)
 		args = append(args, argVal)
 	}
@@ -201,11 +204,11 @@ func invocationExpressionToLlvm(inv *ast.InvocationExpression,
 	return
 }
 
-func dotExpressionToLlvm(dot *ast.DotExpression,
+func dotExpressionToLlvm(dot *ast.DotExpression, curr *Block,
 	locals map[string]*Register) (instrs []Instr, val Value) {
 
 	// Evaluate left expression
-	instrs, lVal := expressionToLlvm(dot.Left, locals, false)
+	instrs, lVal := expressionToLlvm(dot.Left, curr, locals, false)
 
 	// Get field pointer
 	fieldInstrs, field := getFieldPointer(lVal.(*Register), dot.Field, locals)
@@ -231,20 +234,20 @@ func dotExpressionToLlvm(dot *ast.DotExpression,
 	return
 }
 
-func unaryExpressionToLlvm(una *ast.UnaryExpression,
+func unaryExpressionToLlvm(una *ast.UnaryExpression, curr *Block,
 	locals map[string]*Register, isGuard bool) (instrs []Instr, val Value) {
 
 	switch una.Operator {
 	case ast.NotOperator:
-		return notOpToLlvm(una, locals, isGuard)
+		return notOpToLlvm(una, curr, locals, isGuard)
 	case ast.MinusOperator:
-		return minusOpToLlvm(una, locals)
+		return minusOpToLlvm(una, curr, locals)
 	}
 
 	return
 }
 
-func notOpToLlvm(not *ast.UnaryExpression,
+func notOpToLlvm(not *ast.UnaryExpression, curr *Block,
 	locals map[string]*Register, isGuard bool) (instrs []Instr, val Value) {
 
 	// Select desired width
@@ -254,7 +257,7 @@ func notOpToLlvm(not *ast.UnaryExpression,
 	}
 
 	// Process operand expression
-	instrs, oVal := expressionToLlvm(not.Operand, locals, isGuard)
+	instrs, oVal := expressionToLlvm(not.Operand, curr, locals, isGuard)
 
 	// Truncate expression (if needed)
 	var convInstrs []Instr
@@ -282,9 +285,11 @@ func notOpToLlvm(not *ast.UnaryExpression,
 	return
 }
 
-func minusOpToLlvm(not *ast.UnaryExpression, locals map[string]*Register) (instrs []Instr, val Value) {
+func minusOpToLlvm(not *ast.UnaryExpression, curr *Block,
+	locals map[string]*Register) (instrs []Instr, val Value) {
+
 	// Process operand expression
-	instrs, oVal := expressionToLlvm(not.Operand, locals, false)
+	instrs, oVal := expressionToLlvm(not.Operand, curr, locals, false)
 
 	name := nextRegName()
 	reg := &Register{
@@ -310,12 +315,12 @@ func minusOpToLlvm(not *ast.UnaryExpression, locals map[string]*Register) (instr
 	return
 }
 
-func binaryExpressionToLlvm(bin *ast.BinaryExpression,
+func binaryExpressionToLlvm(bin *ast.BinaryExpression, curr *Block,
 	locals map[string]*Register, isGuard bool) (instrs []Instr, val Value) {
 
 	// Process left and right expressions
-	instrs, lVal := expressionToLlvm(bin.Left, locals, isGuard)
-	rInstrs, rVal := expressionToLlvm(bin.Right, locals, isGuard)
+	instrs, lVal := expressionToLlvm(bin.Left, curr, locals, isGuard)
+	rInstrs, rVal := expressionToLlvm(bin.Right, curr, locals, isGuard)
 
 	instrs = append(instrs, rInstrs...)
 
@@ -528,11 +533,11 @@ func boolTruncReg(src *Register, locals map[string]*Register) (instr Instr, reg 
 }
 
 // === Helpers ===
-func createGuardLlvm(guard ast.Expression,
+func createGuardLlvm(guard ast.Expression, curr *Block,
 	locals map[string]*Register) (instrs []Instr, val Value) {
 
 	// Process guard expression
-	instrs, guardVal := expressionToLlvm(guard, locals, true)
+	instrs, guardVal := expressionToLlvm(guard, curr, locals, true)
 
 	// Truncate if needed
 	convInstrs, val := convertBoolWidth(guardVal, locals, true)
@@ -673,5 +678,11 @@ func addDefUse(instr Instr) {
 		}
 
 	case *PhiInstr:
+		v.Target.Def = v
+		for _, phiVal := range v.Values {
+			if reg, ok := phiVal.Value.(*Register); ok {
+				reg.Uses = append(reg.Uses, v)
+			}
+		}
 	}
 }

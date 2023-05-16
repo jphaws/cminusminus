@@ -219,7 +219,7 @@ func processStatements(stmts []ast.Statement, curr *Block,
 
 			var instrs []Instr
 			if stackLlvm {
-				instrs = returnStatementToLlvmStack(stmt, funcExit, locals)
+				instrs = returnStatementToLlvmStack(stmt, curr, funcExit, locals)
 			} else {
 				instrs = returnStatementToLlvmReg(stmt, curr, funcExit, locals)
 			}
@@ -238,7 +238,7 @@ func processStatements(stmts []ast.Statement, curr *Block,
 			}
 
 		default:
-			curr.Instrs = append(curr.Instrs, statementToLlvm(stmt, locals)...)
+			curr.Instrs = append(curr.Instrs, statementToLlvm(stmt, curr, locals)...)
 		}
 	}
 
@@ -260,7 +260,7 @@ func processIfStatement(fi *ast.IfStatement, curr *Block,
 	curr.Next = thenEntry
 
 	// Add guard instructions
-	guardInstrs, guardVal := createGuardLlvm(fi.Guard, locals)
+	guardInstrs, guardVal := createGuardLlvm(fi.Guard, curr, locals) // TODO: Verify this should also be curr...
 	curr.Instrs = append(curr.Instrs, guardInstrs...)
 
 	// Process then statements
@@ -319,7 +319,7 @@ func processWhileStatement(whl *ast.WhileStatement, curr *Block,
 	curr.types = append(curr.types, &whileGuardBlock{count})
 
 	// Add guard instructions
-	guardInstrs, guardVal := createGuardLlvm(whl.Guard, locals)
+	guardInstrs, guardVal := createGuardLlvm(whl.Guard, curr, locals) // TODO: Verify this should also be curr...
 	curr.Instrs = append(curr.Instrs, guardInstrs...)
 
 	// Create whlexit block (prev: curr, dynamic)
@@ -344,7 +344,7 @@ func processWhileStatement(whl *ast.WhileStatement, curr *Block,
 		whileGuard.types = append(whileGuard.types, &whileGuardBlock{count})
 
 		// Add guard instructions
-		guardInstrs, guardVal = createGuardLlvm(whl.Guard, locals)
+		guardInstrs, guardVal = createGuardLlvm(whl.Guard, curr, locals) // TODO: Verify this is supposed to be curr...
 		whileGuard.Instrs = append(whileGuard.Instrs, guardInstrs...)
 
 		// Create backedge
