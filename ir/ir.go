@@ -41,6 +41,8 @@ type Function struct {
 	Cfg        *Block
 }
 
+var stackLlvm = false
+
 const (
 	intSize        = 8
 	pointerSize    = 8
@@ -198,8 +200,9 @@ func regUseDef(reg *Register) string {
 	return ret + "\n"
 }
 
-func CreateIr(root *ast.Root, tables *ast.Tables) *ProgramIr {
+func CreateIr(root *ast.Root, tables *ast.Tables, stack bool) *ProgramIr {
 	funcChan := make(chan *Function)
+	stackLlvm = stack
 
 	// Convert struct table (llvm-ify)
 	for k, v := range tables.StructTable {

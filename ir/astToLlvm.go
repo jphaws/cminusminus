@@ -18,7 +18,11 @@ var regNum = 0
 func statementToLlvm(stmt ast.Statement, locals map[string]*Register) []Instr {
 	switch v := stmt.(type) {
 	case *ast.AssignmentStatement:
-		return assignmentStatementToLlvm(v, locals)
+		if stackLlvm {
+			return assignmentStatementToLlvmStack(v, locals)
+		} else {
+			panic("Reg-based assignment not implemented!")
+		}
 	case *ast.PrintStatement:
 		return printStatementToLlvm(v, locals)
 	case *ast.DeleteStatement:
@@ -29,66 +33,6 @@ func statementToLlvm(stmt ast.Statement, locals map[string]*Register) []Instr {
 	}
 
 	panic(fmt.Sprintf("Could not process statement of type %T", stmt))
-}
-
-func assignmentStatementToLlvm(asgn *ast.AssignmentStatement, locals map[string]*Register) []Instr {
-	instrs, target := lValueToLlvm(asgn.Target, locals)
-
-	// Read from stdin (if read assignment)
-	if asgn.Source == nil {
-		readInstrs := readToLlvm(target)
-		instrs = append(instrs, readInstrs...)
-		return instrs
-	}
-
-	// Otherwise, process expression
-	expInstrs, val := expressionToLlvm(asgn.Source, locals, false)
-	instrs = append(instrs, expInstrs...)
-
-	store := &StoreInstr{
-		Mem: target,
-		Reg: val,
-	}
-	addDefUse(store)
-
-	return append(instrs, store)
-}
-
-func lValueToLlvm(lval ast.LValue, locals map[string]*Register) (instrs []Instr, reg *Register) {
-	switch v := lval.(type) {
-	case *ast.NameLValue:
-		// Base case
-		reg = lookupSymbol(v.Name, locals)
-
-	case *ast.DotLValue:
-		// Recurse on left side
-		var ptr *Register
-		instrs, ptr = lValueToLlvm(v.Left, locals)
-
-		// Create base register (pointer to start of struct)
-		name := nextRegName()
-		base := &Register{
-			Name: name,
-			Type: ptr.GetType().(*PointerType).TargetType,
-		}
-		locals[name] = base
-
-		// Load base pointer
-		load := &LoadInstr{
-			Reg: base,
-			Mem: ptr,
-		}
-		addDefUse(load)
-
-		instrs = append(instrs, load)
-
-		// Get field pointer
-		var fieldInstrs []Instr
-		fieldInstrs, reg = getFieldPointer(base, v.Name, locals)
-		instrs = append(instrs, fieldInstrs...)
-	}
-
-	return
 }
 
 func getFieldPointer(base *Register, fieldName string,
@@ -183,27 +127,6 @@ func deleteStatementToLlvm(del *ast.DeleteStatement, locals map[string]*Register
 	return append(instrs, call)
 }
 
-func returnStatementToLlvm(ret *ast.ReturnStatement, funcExit *Block, locals map[string]*Register) []Instr {
-	jump := createJump(funcExit)
-
-	// Check for a void return
-	if ret.Expression == nil {
-		return []Instr{jump}
-	}
-
-	// Process expression
-	instrs, val := expressionToLlvm(ret.Expression, locals, false)
-
-	// Store expression value and jump to exit block
-	store := &StoreInstr{
-		Mem: locals[retPtrName],
-		Reg: val,
-	}
-	addDefUse(store)
-
-	return append(instrs, store, jump)
-}
-
 // === Expressions ===
 func expressionToLlvm(expr ast.Expression, locals map[string]*Register,
 	isGuard bool) (instrs []Instr, val Value) {
@@ -218,7 +141,11 @@ func expressionToLlvm(expr ast.Expression, locals map[string]*Register,
 	case *ast.BinaryExpression:
 		return binaryExpressionToLlvm(v, locals, isGuard)
 	case *ast.IdentifierExpression:
-		return identifierExpressionToLlvm(v, locals)
+		if stackLlvm {
+			return identifierExpressionToLlvmStack(v, locals)
+		} else {
+			panic("Reg-based identifiers not implemented!")
+		}
 	case *ast.IntExpression:
 		val = intExpressionToLlvm(v)
 	case *ast.TrueExpression:
@@ -457,29 +384,6 @@ func binaryExpressionToLlvm(bin *ast.BinaryExpression,
 	return
 }
 
-func identifierExpressionToLlvm(ident *ast.IdentifierExpression,
-	locals map[string]*Register) (instrs []Instr, val Value) {
-
-	mem := lookupSymbol(ident.Name, locals)
-
-	reg := &Register{
-		Name: nextRegName(),
-		Type: mem.GetType().(*PointerType).TargetType,
-	}
-	locals[reg.Name] = reg
-
-	load := &LoadInstr{
-		Reg: reg,
-		Mem: mem,
-	}
-	addDefUse(load)
-
-	instrs = []Instr{load}
-	val = reg
-
-	return
-}
-
 func intExpressionToLlvm(tin *ast.IntExpression) *Literal {
 	return &Literal{
 		Value: tin.Value,
@@ -544,18 +448,6 @@ func nullExpressionToLlvm() Value {
 		Value: "null",
 		Type:  &PointerType{},
 	}
-}
-
-func lookupSymbol(name string, locals map[string]*Register) *Register {
-	var ret *Register
-
-	if r, ok := locals[name]; ok {
-		ret = r
-	} else {
-		ret = symbolTable[name]
-	}
-
-	return ret
 }
 
 func convertBoolWidth(src Value, locals map[string]*Register, isGuard bool) (instrs []Instr, val Value) {
@@ -635,6 +527,7 @@ func boolTruncReg(src *Register, locals map[string]*Register) (instr Instr, reg 
 	return
 }
 
+// === Helpers ===
 func createGuardLlvm(guard ast.Expression,
 	locals map[string]*Register) (instrs []Instr, val Value) {
 
@@ -646,103 +539,6 @@ func createGuardLlvm(guard ast.Expression,
 	instrs = append(instrs, convInstrs...)
 
 	return
-}
-
-func functionInitLlvm(fn *ast.Function) (instrs []Instr,
-	locals map[string]*Register, params []*Register) {
-
-	// Allocate space for local variables and parameters
-	instrs = make([]Instr, 0, 2*len(fn.Parameters)+len(fn.Locals))
-	locals = make(map[string]*Register, len(fn.Parameters)+len(fn.Locals))
-	params = make([]*Register, 0, len(fn.Parameters))
-
-	// Handle parameters
-	for _, v := range fn.Parameters {
-		// Create parameter register
-		pReg := &Register{
-			Name: "%_p" + v.Name,
-			Type: typeToLlvm(v.Type),
-		}
-		locals["_p"+v.Name] = pReg
-
-		// Create parameter stack pointer
-		reg := &Register{
-			Name: "%" + v.Name,
-			Type: &PointerType{typeToLlvm(v.Type)},
-		}
-		locals[v.Name] = reg
-		params = append(params, pReg)
-
-		// Allocate space for parameter on the stack
-		alloc := &AllocInstr{reg}
-		addDefUse(alloc)
-
-		// Store parameter on the stack
-		store := &StoreInstr{
-			Mem: reg,
-			Reg: pReg,
-		}
-		addDefUse(store)
-
-		instrs = append(instrs, alloc, store)
-	}
-
-	// Handle locals
-	for _, v := range fn.Locals {
-		reg := &Register{
-			Name: "%" + v.Name,
-			Type: &PointerType{typeToLlvm(v.Type)},
-		}
-		locals[v.Name] = reg
-
-		alloc := &AllocInstr{reg}
-		addDefUse(alloc)
-
-		instrs = append(instrs, alloc)
-	}
-
-	// Create return register (if needed)
-	if _, ok := fn.ReturnType.(*ast.VoidType); ok {
-		return
-	}
-
-	retPtr := &Register{
-		Name: "%" + retPtrName,
-		Type: &PointerType{typeToLlvm(fn.ReturnType)},
-	}
-	locals[retPtrName] = retPtr
-
-	alloc := &AllocInstr{retPtr}
-	addDefUse(alloc)
-
-	instrs = append(instrs, alloc)
-
-	return
-}
-
-func functionFiniLlvm(fn *ast.Function, locals map[string]*Register) []Instr {
-	// Store the return value in a register (if needed)
-	if _, ok := fn.ReturnType.(*ast.VoidType); ok {
-		return []Instr{&RetInstr{}}
-	}
-
-	retVal := &Register{
-		Name: "%" + retValName,
-		Type: typeToLlvm(fn.ReturnType),
-	}
-	locals[retVal.Name] = retVal
-
-	// Create load and return instructions
-	load := &LoadInstr{
-		Reg: retVal,
-		Mem: locals[retPtrName],
-	}
-	addDefUse(load)
-
-	ret := &RetInstr{retVal}
-	addDefUse(ret)
-
-	return []Instr{load, ret}
 }
 
 func createJump(next *Block) Instr {

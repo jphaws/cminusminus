@@ -9,8 +9,8 @@ import (
 type Block struct {
 	function string
 	types    []blockType
-	sealed   bool
 	context  map[string]Value
+	sealed   bool
 	Prev     []*Block
 	Next     *Block
 	Els      *Block
@@ -123,20 +123,33 @@ func processFunction(fn *ast.Function, ch chan *Function) {
 	entry := &Block{
 		function: fn.Name,
 		types:    make([]blockType, 0, 2),
+		context:  map[string]Value{},
 		Prev:     []*Block{},
 		Instrs:   []Instr{},
 	}
 
 	entry.types = append(entry.types, &fnEntryBlock{})
 
+	// Create IR function wrapper
+	ret := &Function{
+		ReturnType: typeToLlvm(fn.ReturnType),
+		Cfg:        entry,
+	}
+
 	// Initialize entry variables
-	instrs, locals, params := functionInitLlvm(fn)
-	entry.Instrs = append(entry.Instrs, instrs...)
+	if stackLlvm {
+		var instrs []Instr
+		instrs, ret.Registers, ret.Parameters = functionInitLlvmStack(fn)
+		entry.Instrs = append(entry.Instrs, instrs...)
+	} else {
+		ret.Registers, ret.Parameters = functionInitLlvmReg(fn, entry)
+	}
 
 	// Create exit block
 	exit := &Block{
 		function: fn.Name,
 		types:    make([]blockType, 0, 1),
+		context:  map[string]Value{},
 		Prev:     []*Block{},
 		Instrs:   []Instr{},
 	}
@@ -149,7 +162,7 @@ func processFunction(fn *ast.Function, ch chan *Function) {
 	}
 
 	// Process function body
-	end, _ := processStatements(fn.Body, entry, exit, locals, 0)
+	end, _ := processStatements(fn.Body, entry, exit, ret.Registers, 0)
 
 	// Compress final and end blocks (if needed)
 	if len(exit.Prev) == 1 {
@@ -169,16 +182,13 @@ func processFunction(fn *ast.Function, ch chan *Function) {
 	}
 
 	// Add return instructions
-	instrs = functionFiniLlvm(fn, locals)
-	exit.Instrs = append(exit.Instrs, instrs...)
-
-	// Create IR function wrapper
-	ret := &Function{
-		Parameters: params,
-		ReturnType: typeToLlvm(fn.ReturnType),
-		Registers:  locals,
-		Cfg:        entry,
+	var instrs []Instr
+	if stackLlvm {
+		instrs = functionFiniLlvmStack(fn, ret.Registers)
+	} else {
+		instrs = functionFiniLlvmReg(fn, exit, ret.Registers)
 	}
+	exit.Instrs = append(exit.Instrs, instrs...)
 
 	ch <- ret
 }
@@ -207,7 +217,12 @@ func processStatements(stmts []ast.Statement, curr *Block,
 			curr.Next = funcExit
 			funcExit.Prev = append(funcExit.Prev, curr)
 
-			instrs := returnStatementToLlvm(stmt, funcExit, locals)
+			var instrs []Instr
+			if stackLlvm {
+				instrs = returnStatementToLlvmStack(stmt, funcExit, locals)
+			} else {
+				instrs = returnStatementToLlvmReg(stmt, curr, funcExit, locals)
+			}
 			curr.Instrs = append(curr.Instrs, instrs...)
 
 			b = nil
@@ -350,6 +365,7 @@ func createBlock(function string, typ blockType, prev []*Block) *Block {
 	ret := &Block{
 		function: function,
 		types:    make([]blockType, 0, 2),
+		context:  map[string]Value{},
 		Prev:     prev,
 		Instrs:   []Instr{},
 	}
