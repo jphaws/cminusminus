@@ -126,7 +126,7 @@ func lookupSymbolStack(name string, locals map[string]*Register) *Register {
 }
 
 // === Functions ===
-func functionInitLlvmStack(fn *ast.Function) (instrs []Instr,
+func functionInitLlvmStack(fn *ast.Function, curr *Block) (instrs []Instr,
 	locals map[string]*Register, params []*Register) {
 
 	// Allocate space for local variables and parameters
@@ -153,6 +153,7 @@ func functionInitLlvmStack(fn *ast.Function) (instrs []Instr,
 
 		// Allocate space for parameter on the stack
 		alloc := &AllocInstr{reg}
+		curr.Allocs = append(curr.Allocs, alloc)
 		addDefUse(alloc)
 
 		// Store parameter on the stack
@@ -162,7 +163,7 @@ func functionInitLlvmStack(fn *ast.Function) (instrs []Instr,
 		}
 		addDefUse(store)
 
-		instrs = append(instrs, alloc, store)
+		instrs = append(instrs, store)
 	}
 
 	// Handle locals
@@ -176,7 +177,7 @@ func functionInitLlvmStack(fn *ast.Function) (instrs []Instr,
 		alloc := &AllocInstr{reg}
 		addDefUse(alloc)
 
-		instrs = append(instrs, alloc)
+		curr.Allocs = append(curr.Allocs, alloc)
 	}
 
 	// Create return register (if needed)
@@ -193,7 +194,7 @@ func functionInitLlvmStack(fn *ast.Function) (instrs []Instr,
 	alloc := &AllocInstr{retPtr}
 	addDefUse(alloc)
 
-	instrs = append(instrs, alloc)
+	curr.Allocs = append(curr.Allocs, alloc)
 
 	return
 }

@@ -140,7 +140,7 @@ func processFunction(fn *ast.Function, ch chan *Function) {
 	// Initialize entry variables
 	if stackLlvm {
 		var instrs []Instr
-		instrs, ret.Registers, ret.Parameters = functionInitLlvmStack(fn)
+		instrs, ret.Registers, ret.Parameters = functionInitLlvmStack(fn, entry)
 		entry.Instrs = append(entry.Instrs, instrs...)
 	} else {
 		ret.Registers, ret.Parameters = functionInitLlvmReg(fn, entry)
