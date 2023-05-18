@@ -15,6 +15,7 @@ type Block struct {
 	Next     *Block
 	Els      *Block
 	Phis     []*PhiInstr
+	Allocs   []*AllocInstr
 	Instrs   []Instr
 }
 
@@ -186,7 +187,7 @@ func processFunction(fn *ast.Function, ch chan *Function) {
 	if stackLlvm {
 		instrs = functionFiniLlvmStack(fn, ret.Registers)
 	} else {
-		instrs = functionFiniLlvmReg(fn, exit, ret.Registers)
+		instrs = functionFiniLlvmReg(fn, entry, exit, ret.Registers)
 	}
 	exit.Instrs = append(exit.Instrs, instrs...)
 

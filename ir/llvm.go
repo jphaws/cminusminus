@@ -23,31 +23,31 @@ func (a AllocInstr) String() string {
 
 type LoadInstr struct {
 	Reg *Register
-	Mem *Register
+	Mem Value
 }
 
 func (l LoadInstr) instrFunc() {}
 
 func (l LoadInstr) String() string {
-	memType := l.Mem.GetType().(*PointerType)
+	memType := l.Mem.GetType()
 	return fmt.Sprintf("%v = load %v, %v %v", l.Reg, l.Reg.GetType(), memType, l.Mem)
 }
 
 type StoreInstr struct {
-	Mem *Register
+	Mem Value
 	Reg Value
 }
 
 func (s StoreInstr) instrFunc() {}
 
 func (s StoreInstr) String() string {
-	memType := s.Mem.GetType().(*PointerType)
+	memType := s.Mem.GetType()
 	return fmt.Sprintf("store %v %v, %v %v", s.Reg.GetType(), s.Reg, memType, s.Mem)
 }
 
 type GepInstr struct {
 	Target *Register
-	Base   *Register
+	Base   Value
 	Index  int
 }
 

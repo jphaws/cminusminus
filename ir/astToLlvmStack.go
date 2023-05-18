@@ -5,8 +5,8 @@ import (
 )
 
 // === Statements ===
-func assignmentStatementToLlvmStack(asgn *ast.AssignmentStatement, curr *Block,
-	locals map[string]*Register) []Instr {
+func assignmentStatementToLlvmStack(asgn *ast.AssignmentStatement,
+	curr *Block, locals map[string]*Register) []Instr {
 
 	instrs, target := lValueToLlvmStack(asgn.Target, locals)
 
@@ -36,7 +36,7 @@ func lValueToLlvmStack(lval ast.LValue,
 	switch v := lval.(type) {
 	case *ast.NameLValue:
 		// Base case
-		reg = lookupSymbol(v.Name, locals)
+		reg = lookupSymbolStack(v.Name, locals)
 
 	case *ast.DotLValue:
 		// Recurse on left side
@@ -61,9 +61,9 @@ func lValueToLlvmStack(lval ast.LValue,
 		instrs = append(instrs, load)
 
 		// Get field pointer
-		var fieldInstrs []Instr
-		fieldInstrs, reg = getFieldPointer(base, v.Name, locals)
-		instrs = append(instrs, fieldInstrs...)
+		var gepInstr *GepInstr
+		gepInstr, reg = getFieldPointer(base, v.Name, locals)
+		instrs = append(instrs, gepInstr)
 	}
 
 	return
@@ -96,7 +96,7 @@ func returnStatementToLlvmStack(ret *ast.ReturnStatement, curr *Block,
 func identifierExpressionToLlvmStack(ident *ast.IdentifierExpression,
 	locals map[string]*Register) (instrs []Instr, val Value) {
 
-	mem := lookupSymbol(ident.Name, locals)
+	mem := lookupSymbolStack(ident.Name, locals)
 
 	name := nextRegName()
 	reg := &Register{
@@ -117,16 +117,12 @@ func identifierExpressionToLlvmStack(ident *ast.IdentifierExpression,
 	return
 }
 
-func lookupSymbol(name string, locals map[string]*Register) *Register {
-	var ret *Register
-
+func lookupSymbolStack(name string, locals map[string]*Register) *Register {
 	if r, ok := locals[name]; ok {
-		ret = r
+		return r
 	} else {
-		ret = symbolTable[name]
+		return symbolTable[name]
 	}
-
-	return ret
 }
 
 // === Functions ===

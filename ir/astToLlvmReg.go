@@ -4,6 +4,162 @@ import (
 	"github.com/keen-cp/compiler-project-c/ast"
 )
 
+// === Statements ===
+func assignmentStatementToLlvmReg(asgn *ast.AssignmentStatement,
+	curr *Block, locals map[string]*Register) []Instr {
+
+	// Process lvalue
+	instrs, ptr, name := lValueToLlvmReg(asgn.Target, curr, locals)
+
+	// Assignment is a read
+	if asgn.Source == nil {
+		noPointer := false
+
+		// Create a read pointer for use with local name lvalues
+		if ptr == nil {
+			noPointer = true
+			ptr = allocRead(locals)
+		}
+
+		// Read into pointer location
+		instrs = append(instrs, readToLlvm(ptr)...)
+
+		if noPointer {
+			// Create read result register
+			reg := &Register{
+				Name: nextRegName(),
+				Type: &IntType{64},
+			}
+			locals[reg.Name] = reg
+
+			// Load scanned value from pointer to register
+			load := &LoadInstr{
+				Reg: reg,
+				Mem: ptr,
+			}
+			instrs = append(instrs, load)
+			addDefUse(load)
+
+			// Update block context
+			curr.context[name] = reg
+		}
+
+		// Assignment is not a read
+	} else {
+		// Evaluate expression
+		exprInstrs, val := expressionToLlvm(asgn.Source, curr, locals, false)
+		instrs = append(instrs, exprInstrs...)
+
+		// Store to pointer (if possible: dot lvalues, globals)
+		if ptr != nil {
+			store := &StoreInstr{
+				Mem: ptr,
+				Reg: val,
+			}
+			addDefUse(store)
+
+			instrs = append(instrs, store)
+
+			// Otherwise, update block context
+		} else {
+			curr.context[name] = val
+		}
+	}
+
+	return instrs
+}
+
+func lValueToLlvmReg(lval ast.LValue, curr *Block,
+	locals map[string]*Register) (instrs []Instr, ptr Value, name string) {
+
+	switch v := lval.(type) {
+	case *ast.NameLValue:
+		name = v.Name
+
+		// Look up globals in the symbol table
+		if _, ok := locals[name]; !ok {
+			ptr = symbolTable[name]
+			return
+		}
+
+	case *ast.DotLValue:
+		var dotInstrs []Instr
+		dotInstrs, ptr = dotLValueToLlvmReg(v, curr, locals, 0)
+		instrs = append(instrs, dotInstrs...)
+	}
+
+	return
+}
+
+func dotLValueToLlvmReg(dot *ast.DotLValue, curr *Block,
+	locals map[string]*Register, level int) (instrs []Instr, val Value) {
+
+	var base Value
+
+	switch v := dot.Left.(type) {
+	case *ast.NameLValue:
+		// Do a simple lookup for final name lvalue
+		instrs, base = lookupSymbolReg(v.Name, curr, locals)
+
+	case *ast.DotLValue:
+		// Otherwise, recurse until a name lvalue is reached
+		instrs, base = dotLValueToLlvmReg(v, curr, locals, level+1)
+	}
+
+	// Get field pointer and load (except on the outermost recursive level)
+	var loadInstrs []Instr
+	loadInstrs, val = loadField(base, dot.Name, locals, level)
+	instrs = append(instrs, loadInstrs...)
+
+	return
+}
+
+func loadField(base Value, fieldName string,
+	locals map[string]*Register, level int) (instrs []Instr, field *Register) {
+
+	// Get field pointer
+	gepInstr, ptr := getFieldPointer(base, fieldName, locals)
+	instrs = append(instrs, gepInstr)
+
+	// Allow overriding the load
+	if level == 0 {
+		field = ptr
+		return
+	}
+
+	// Create field register
+	name := nextRegName()
+	field = &Register{
+		Name: name,
+		Type: ptr.GetType().(*PointerType).TargetType,
+	}
+	locals[name] = field
+
+	// Load field from field pointer
+	load := &LoadInstr{
+		Reg: field,
+		Mem: ptr,
+	}
+	addDefUse(load)
+
+	instrs = append(instrs, load)
+
+	return
+}
+
+func allocRead(locals map[string]*Register) *Register {
+	// Create read pointer (if it doesn't already exit)
+	if _, ok := locals[readPtrName]; !ok {
+		reg := &Register{
+			Name: "%" + readPtrName,
+			Type: &PointerType{&IntType{64}},
+		}
+		locals[readPtrName] = reg
+	}
+
+	return locals[readPtrName]
+}
+
 func returnStatementToLlvmReg(ret *ast.ReturnStatement,
 	curr *Block, funcExit *Block, locals map[string]*Register) []Instr {
 
@@ -25,26 +181,31 @@ func returnStatementToLlvmReg(ret *ast.ReturnStatement,
 func identifierExpressionToLlvmReg(ident *ast.IdentifierExpression,
 	curr *Block, locals map[string]*Register) (instrs []Instr, val Value) {
 
+	return lookupSymbolReg(ident.Name, curr, locals)
+}
+
+func lookupSymbolReg(name string, curr *Block,
+	locals map[string]*Register) (instrs []Instr, val Value) {
+
 	// Get local identifiers from this block or previous block
-	if v, ok := locals[ident.Name]; ok {
-		val = findValue(ident.Name, curr, locals, v.GetType())
+	if v, ok := locals[name]; ok {
+		val = findValue(name, curr, locals, v.GetType())
 
 		// Otherwise, get and load a global
 	} else {
-		mem := symbolTable[ident.Name]
+		val = symbolTable[name]
 
 		// Create load target register
-		name := nextRegName()
 		reg := &Register{
-			Name: name,
-			Type: mem.GetType().(*PointerType).TargetType,
+			Name: nextRegName(),
+			Type: val.GetType().(*PointerType).TargetType,
 		}
-		locals[name] = reg
+		locals[reg.Name] = reg
 
 		// Load global into register
 		load := &LoadInstr{
 			Reg: reg,
-			Mem: mem,
+			Mem: val,
 		}
 		addDefUse(load)
 
@@ -54,21 +215,6 @@ func identifierExpressionToLlvmReg(ident *ast.IdentifierExpression,
 
 	return
 }
-
-/*
-// TODO: Rename
-func lookupSymbolReg(name string, curr *Block, locals map[string]*Register, typ Type) Value {
-	var ret Value
-
-	if _, ok := locals[name]; ok {
-		ret = findValue(name, curr, locals, typ)
-	} else {
-		ret = symbolTable[name]
-	}
-
-	return ret
-}
-*/
 
 // === Functions ===
 func functionInitLlvmReg(fn *ast.Function,
@@ -103,7 +249,16 @@ func functionInitLlvmReg(fn *ast.Function,
 	return
 }
 
-func functionFiniLlvmReg(fn *ast.Function, curr *Block, locals map[string]*Register) []Instr {
+func functionFiniLlvmReg(fn *ast.Function, funcEntry *Block,
+	curr *Block, locals map[string]*Register) []Instr {
+
+	// Allocate read pointer (if needed)
+	if v, ok := locals[readPtrName]; ok {
+		alloc := &AllocInstr{v}
+		funcEntry.Allocs = append(funcEntry.Allocs, alloc)
+		addDefUse(alloc)
+	}
+
 	// Return nothing for a void function
 	if _, ok := fn.ReturnType.(*ast.VoidType); ok {
 		return []Instr{&RetInstr{}}
@@ -119,7 +274,6 @@ func functionFiniLlvmReg(fn *ast.Function, curr *Block, locals map[string]*Regis
 	return []Instr{ret}
 }
 
-// The start of THE ALGORITHM
 func findValue(name string, curr *Block, locals map[string]*Register, typ Type) Value {
 	if v, ok := curr.context[name]; ok {
 		return v
@@ -156,12 +310,11 @@ func findValueFromPrevs(name string, curr *Block, locals map[string]*Register, t
 		// Handle sealed blocks (2+ previous) by adding a phi and recursing into all prev
 
 		// Create target register (type not set yet)
-		name := nextRegName()
 		reg := &Register{
-			Name: name,
+			Name: nextRegName(),
 			Type: typ,
 		}
-		locals[name] = reg
+		locals[reg.Name] = reg
 
 		// Create phi instruction
 		phi := &PhiInstr{

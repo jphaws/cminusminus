@@ -156,6 +156,10 @@ func (b *Block) toLlvm() string {
 		ret += fmt.Sprintf("  %v\n", v)
 	}
 
+	for _, v := range b.Allocs {
+		ret += fmt.Sprintf("  %v\n", v)
+	}
+
 	for _, v := range b.Instrs {
 		ret += fmt.Sprintf("  %v\n", v)
 	}

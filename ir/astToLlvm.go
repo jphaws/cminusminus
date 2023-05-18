@@ -8,8 +8,9 @@ import (
 )
 
 const (
-	retValName = "_retval"
-	retPtrName = "_ret"
+	retValName  = "_retval"
+	retPtrName  = "_ret"
+	readPtrName = "_read"
 )
 
 var regNum = 0
@@ -21,7 +22,7 @@ func statementToLlvm(stmt ast.Statement, curr *Block, locals map[string]*Registe
 		if stackLlvm {
 			return assignmentStatementToLlvmStack(v, curr, locals)
 		} else {
-			panic("Reg-based assignment not implemented!")
+			return assignmentStatementToLlvmReg(v, curr, locals)
 		}
 	case *ast.PrintStatement:
 		return printStatementToLlvm(v, curr, locals)
@@ -33,55 +34,6 @@ func statementToLlvm(stmt ast.Statement, curr *Block, locals map[string]*Registe
 	}
 
 	panic(fmt.Sprintf("Could not process statement of type %T", stmt))
-}
-
-func getFieldPointer(base *Register, fieldName string,
-	locals map[string]*Register) (instrs []Instr, field *Register) {
-
-	// Get struct ID
-	id := base.GetType().(*PointerType).TargetType.(*StructType).Id
-
-	// Get information for the relevant struct field
-	f, _ := structTable[id].Fields.Get(fieldName)
-
-	// Create field register (pointer to field in struct)
-	name := nextRegName()
-	field = &Register{
-		Name: name,
-		Type: &PointerType{f.Type},
-	}
-	locals[name] = field
-
-	// Load base pointer and move pointer forward to field
-	gep := &GepInstr{
-		Target: field,
-		Base:   base,
-		Index:  f.Index,
-	}
-	addDefUse(gep)
-
-	instrs = []Instr{gep}
-	return
-}
-
-func readToLlvm(target *Register) []Instr {
-	format := "@" + scanStrName
-
-	call := &CallInstr{
-		FnName:     "@scanf",
-		ReturnType: &IntType{32},
-		Arguments: []Value{
-			&Literal{
-				Value: format,
-				Type:  &PointerType{&IntType{8}},
-			},
-			target,
-		},
-		Variadic: 1,
-	}
-	addDefUse(call)
-
-	return []Instr{call}
 }
 
 func printStatementToLlvm(prnt *ast.PrintStatement,
@@ -128,6 +80,54 @@ func deleteStatementToLlvm(del *ast.DeleteStatement,
 	addDefUse(call)
 
 	return append(instrs, call)
+}
+
+func getFieldPointer(base Value, fieldName string,
+	locals map[string]*Register) (gep *GepInstr, field *Register) {
+
+	// Get struct ID
+	id := base.GetType().(*PointerType).TargetType.(*StructType).Id
+
+	// Get information for the relevant struct field
+	f, _ := structTable[id].Fields.Get(fieldName)
+
+	// Create field register (pointer to field in struct)
+	name := nextRegName()
+	field = &Register{
+		Name: name,
+		Type: &PointerType{f.Type},
+	}
+	locals[name] = field
+
+	// Load base pointer and move pointer forward to field
+	gep = &GepInstr{
+		Target: field,
+		Base:   base,
+		Index:  f.Index,
+	}
+	addDefUse(gep)
+
+	return
+}
+
+func readToLlvm(target Value) []Instr {
+	format := "@" + scanStrName
+
+	call := &CallInstr{
+		FnName:     "@scanf",
+		ReturnType: &IntType{32},
+		Arguments: []Value{
+			&Literal{
+				Value: format,
+				Type:  &PointerType{&IntType{8}},
+			},
+			target,
+		},
+		Variadic: 1,
+	}
+	addDefUse(call)
+
+	return []Instr{call}
 }
 
 // === Expressions ===
@@ -211,8 +211,8 @@ func dotExpressionToLlvm(dot *ast.DotExpression, curr *Block,
 	instrs, lVal := expressionToLlvm(dot.Left, curr, locals, false)
 
 	// Get field pointer
-	fieldInstrs, field := getFieldPointer(lVal.(*Register), dot.Field, locals)
-	instrs = append(instrs, fieldInstrs...)
+	gepInstr, field := getFieldPointer(lVal, dot.Field, locals)
+	instrs = append(instrs, gepInstr)
 
 	// Load value from field pointer
 	name := nextRegName()
@@ -623,17 +623,23 @@ func addDefUse(instr Instr) {
 
 	case *LoadInstr:
 		v.Reg.Def = v
-		v.Mem.Uses = append(v.Mem.Uses, v)
+		if reg, ok := v.Mem.(*Register); ok {
+			reg.Uses = append(reg.Uses, v)
+		}
 
 	case *StoreInstr:
-		v.Mem.Uses = append(v.Mem.Uses, v)
+		if reg, ok := v.Mem.(*Register); ok {
+			reg.Uses = append(reg.Uses, v)
+		}
 		if reg, ok := v.Reg.(*Register); ok {
 			reg.Uses = append(reg.Uses, v)
 		}
 
 	case *GepInstr:
 		v.Target.Def = v
-		v.Base.Uses = append(v.Base.Uses, v)
+		if reg, ok := v.Base.(*Register); ok {
+			reg.Uses = append(reg.Uses, v)
+		}
 
 	case *CallInstr:
 		if v.Target != nil {
