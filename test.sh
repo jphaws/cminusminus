@@ -13,6 +13,7 @@ EXPECTED_LONGER="output.longer.expected"
 ACTUAL="output.actual"
 ACTUAL_LONGER="output.longer.actual"
 CLEANUP=true
+STACK=""
 RET=0
 LOG="test.log"
 ALL=true
@@ -21,7 +22,7 @@ ALL=true
 cleanup() {
 
    go clean
-   
+
    wait
 
    for dir in $BENCHMARKS/*
@@ -64,7 +65,7 @@ compile_benchmark() {
 
    set +e
    # Compile mini source code to LLVM
-   $MC $mini > $minillvm 2>> $LOG
+   $MC -o $minillvm $STACK $mini 2>> $LOG
    if [ "$?" -ne 0 ]; then
       print_error $1 "mini->llvm compilation failed"
       RET=$((RET + 1))
@@ -154,6 +155,9 @@ if [ "$#" -gt 0 ]; then
             ;;
          '-n' | '--no-cleanup')
             CLEANUP=false
+            ;;
+         '-stack' | '--stack')
+            STACK='--stack'
             ;;
          '-'*)
             printf 'invalid option: %s\n' "$arg"

@@ -280,15 +280,28 @@ func findValue(name string, curr *Block, locals map[string]*Register, typ Type) 
 	}
 
 	return findValueFromPrevs(name, curr, locals, typ)
-
 }
 
 func findValueFromPrevs(name string, curr *Block, locals map[string]*Register, typ Type) Value {
 	var val Value
 
-	if curr.sealed { // TODO: Change to `!curr.sealed`
+	if !curr.isSealed() {
 		// Handle unsealed blocks
-		panic("Block not sealed!")
+
+		// Create target register
+		reg := &Register{
+			Name: nextRegName(),
+			Type: typ,
+		}
+		locals[reg.Name] = reg
+
+		// Create phi instruction
+		phi := &PhiInstr{
+			Target: reg,
+		}
+		curr.incompletePhis[name] = phi
+
+		val = reg
 
 	} else if len(curr.Prev) == 0 {
 		// Handle sealed blocks (0 previous) by using a default value
@@ -309,7 +322,7 @@ func findValueFromPrevs(name string, curr *Block, locals map[string]*Register, t
 	} else {
 		// Handle sealed blocks (2+ previous) by adding a phi and recursing into all prev
 
-		// Create target register (type not set yet)
+		// Create target register
 		reg := &Register{
 			Name: nextRegName(),
 			Type: typ,
@@ -325,21 +338,33 @@ func findValueFromPrevs(name string, curr *Block, locals map[string]*Register, t
 		// Update context first to prevent loops
 		curr.context[name] = reg
 
-		// Get possible values from previous blocks (recursively)
-		for _, v := range curr.Prev {
-			phiVal := findValue(name, v, locals, typ)
-
-			phi.Values = append(phi.Values, &PhiVal{
-				Value: phiVal,
-				Block: v,
-			})
-		}
-
-		addDefUse(phi)
+		addPhiValues(phi, name, curr, locals, typ)
 		val = reg
 	}
 
 	curr.context[name] = val
 
 	return val
+}
+
+func addPhiValues(phi *PhiInstr, name string, curr *Block, locals map[string]*Register, typ Type) {
+	// Get possible values from previous blocks (recursively)
+	for _, v := range curr.Prev {
+		phiVal := findValue(name, v, locals, typ)
+
+		phi.Values = append(phi.Values, &PhiVal{
+			Value: phiVal,
+			Block: v,
+		})
+	}
+
+	addDefUse(phi)
+}
+
+func completePhis(curr *Block, locals map[string]*Register) {
+	for name, phi := range curr.incompletePhis {
+		addPhiValues(phi, name, curr, locals, phi.Target.GetType())
+
+		curr.Phis = append(curr.Phis, phi)
+	}
 }

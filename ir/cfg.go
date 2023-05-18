@@ -7,16 +7,16 @@ import (
 )
 
 type Block struct {
-	function string
-	types    []blockType
-	context  map[string]Value
-	sealed   bool
-	Prev     []*Block
-	Next     *Block
-	Els      *Block
-	Phis     []*PhiInstr
-	Allocs   []*AllocInstr
-	Instrs   []Instr
+	function       string
+	types          []blockType
+	context        map[string]Value
+	incompletePhis map[string]*PhiInstr
+	Prev           []*Block
+	Next           *Block
+	Els            *Block
+	Phis           []*PhiInstr
+	Allocs         []*AllocInstr
+	Instrs         []Instr
 }
 
 func (b *Block) Label() string {
@@ -27,6 +27,19 @@ func (b *Block) Label() string {
 	}
 
 	return ret
+}
+
+func (b *Block) isSealed() bool {
+	return b.incompletePhis == nil
+}
+
+func (b *Block) seal(locals map[string]*Register) {
+	completePhis(b, locals)
+	b.incompletePhis = nil
+}
+
+func (b *Block) unseal() {
+	b.incompletePhis = map[string]*PhiInstr{}
 }
 
 type blockType interface {
@@ -199,6 +212,7 @@ func processStatements(stmts []ast.Statement, curr *Block,
 
 	rcount = count
 
+	// Loop through all statements in this block
 	for _, s := range stmts {
 		switch stmt := s.(type) {
 		case *ast.IfStatement:
@@ -215,6 +229,7 @@ func processStatements(stmts []ast.Statement, curr *Block,
 			curr, count = processWhileStatement(stmt, curr, funcExit, locals, count+1)
 
 		case *ast.ReturnStatement:
+			// Link current block to function exit block
 			curr.Next = funcExit
 			funcExit.Prev = append(funcExit.Prev, curr)
 
@@ -230,6 +245,7 @@ func processStatements(stmts []ast.Statement, curr *Block,
 			return
 
 		case *ast.BlockStatement:
+			// Treat statements within an AST block as through they are in this CFG block
 			curr, count = processStatements(stmt.Statements, curr, funcExit, locals, count)
 
 			// Bail out if return equivalent
@@ -261,7 +277,7 @@ func processIfStatement(fi *ast.IfStatement, curr *Block,
 	curr.Next = thenEntry
 
 	// Add guard instructions
-	guardInstrs, guardVal := createGuardLlvm(fi.Guard, curr, locals) // TODO: Verify this should also be curr...
+	guardInstrs, guardVal := createGuardLlvm(fi.Guard, curr, locals)
 	curr.Instrs = append(curr.Instrs, guardInstrs...)
 
 	// Process then statements
@@ -270,7 +286,7 @@ func processIfStatement(fi *ast.IfStatement, curr *Block,
 	// When there is no else block, link current block to ifexit
 	if fi.Else == nil {
 		// Create ifexit block
-		ifExit = createBlock(fn, &ifExitBlock{count}, []*Block{thenExit, curr})
+		ifExit = createBlock(fn, &ifExitBlock{count}, []*Block{curr})
 		elseEntry = ifExit
 		curr.Els = ifExit
 
@@ -283,7 +299,7 @@ func processIfStatement(fi *ast.IfStatement, curr *Block,
 		elseExit, rcount = processStatements(fi.Else.Statements, elseEntry, funcExit, locals, rcount)
 
 		// Create ifexit block
-		ifExit = createBlock(fn, &ifExitBlock{count}, []*Block{thenExit, elseExit})
+		ifExit = createBlock(fn, &ifExitBlock{count}, []*Block{})
 	}
 
 	// Create guard branch
@@ -297,12 +313,14 @@ func processIfStatement(fi *ast.IfStatement, curr *Block,
 	// Link then/else exit blocks to overall ifexit block
 	if thenExit != nil {
 		thenExit.Next = ifExit
+		ifExit.Prev = append(ifExit.Prev, thenExit)
 
 		thenExit.Instrs = append(thenExit.Instrs, createJump(ifExit))
 	}
 
 	if elseExit != nil {
 		elseExit.Next = ifExit
+		ifExit.Prev = append(ifExit.Prev, elseExit)
 
 		elseExit.Instrs = append(elseExit.Instrs, createJump(ifExit))
 	}
@@ -320,7 +338,7 @@ func processWhileStatement(whl *ast.WhileStatement, curr *Block,
 	curr.types = append(curr.types, &whileGuardBlock{count})
 
 	// Add guard instructions
-	guardInstrs, guardVal := createGuardLlvm(whl.Guard, curr, locals) // TODO: Verify this should also be curr...
+	guardInstrs, guardVal := createGuardLlvm(whl.Guard, curr, locals)
 	curr.Instrs = append(curr.Instrs, guardInstrs...)
 
 	// Create whlexit block (prev: curr, dynamic)
@@ -332,6 +350,9 @@ func processWhileStatement(whl *ast.WhileStatement, curr *Block,
 	whileEntry := createBlock(fn, &whileBlock{count}, make([]*Block, 0, 2))
 	whileEntry.Prev = append(whileEntry.Prev, curr)
 	curr.Next = whileEntry
+
+	// Unseal initial while block
+	whileEntry.unseal()
 
 	// Add branch instruction
 	curr.Instrs = append(curr.Instrs, createBranch(guardVal, whileEntry, whileExit))
@@ -345,12 +366,15 @@ func processWhileStatement(whl *ast.WhileStatement, curr *Block,
 		whileGuard.types = append(whileGuard.types, &whileGuardBlock{count})
 
 		// Add guard instructions
-		guardInstrs, guardVal = createGuardLlvm(whl.Guard, curr, locals) // TODO: Verify this is supposed to be curr...
+		guardInstrs, guardVal = createGuardLlvm(whl.Guard, whileGuard, locals)
 		whileGuard.Instrs = append(whileGuard.Instrs, guardInstrs...)
 
 		// Create backedge
 		whileGuard.Next = whileEntry
 		whileEntry.Prev = append(whileEntry.Prev, whileGuard)
+
+		// Seal the entry block
+		whileEntry.seal(locals)
 
 		// Link guard to whlexit
 		whileGuard.Els = whileExit

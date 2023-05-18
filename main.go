@@ -110,7 +110,7 @@ func parseArgs() (opts Options, args []string) {
 	}
 
 	flags.StringVar(&opts.outputFile, "o", "", "output to `filename`")
-	flags.BoolVar(&opts.stackIr, "stack", true, "use a stack-based intermediate representation")
+	flags.BoolVar(&opts.stackIr, "stack", false, "use a stack-based intermediate representation")
 	flags.BoolVar(&opts.graph, "graph", false, "output a control flow graph in the dot language")
 	flags.BoolVar(&opts.defUse, "def-use", false, "output def-use chains for each function")
 

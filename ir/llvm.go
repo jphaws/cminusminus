@@ -189,8 +189,7 @@ func (p PhiInstr) String() string {
 		values = append(values, fmt.Sprintf("[%v, %%%v]", v.Value, v.Block.Label()))
 	}
 
-	return fmt.Sprintf("%v = phi %v %v",
-		p.Target, p.Values[0].Value.GetType(), strings.Join(values, ", "))
+	return fmt.Sprintf("%v = phi %v %v", p.Target, p.Target.GetType(), strings.Join(values, ", "))
 }
 
 // === Conversions ===
