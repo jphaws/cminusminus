@@ -86,6 +86,8 @@ func (s StructType) canConvertTo(t Type) bool {
 	switch v := t.(type) {
 	case *StructType:
 		return v.Id == "" || s.Id == v.Id
+	case *NullType:
+		return true
 	case *ErrorType:
 		return true
 	}
@@ -115,8 +117,14 @@ func (n NullType) String() string {
 }
 
 func (n NullType) canConvertTo(t Type) bool {
-	_, ok := t.(*StructType)
-	return ok
+	switch t.(type) {
+	case *NullType:
+		return true
+	case *StructType:
+		return true
+	}
+
+	return false
 }
 
 type FunctionType struct {
