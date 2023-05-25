@@ -153,17 +153,16 @@ func (b *Block) toLlvm() string {
 	ret := b.Label() + ":\n"
 
 	for _, v := range b.Phis {
-		ret += fmt.Sprintf("  %v\n", v)
+		ret += fmt.Sprintf("    %v\n", v)
 	}
 
 	for _, v := range b.Allocs {
-		ret += fmt.Sprintf("  %v\n", v)
+		ret += fmt.Sprintf("    %v\n", v)
 	}
 
 	for _, v := range b.Instrs {
-		ret += fmt.Sprintf("  %v\n", v)
+		ret += fmt.Sprintf("    %v\n", v)
 	}
-	ret += "\n"
 
 	// Process next block
 	if b.Next != nil && !visitedLlvm[b.Next] {
@@ -181,28 +180,65 @@ func (b *Block) toLlvm() string {
 func (p ProgramIr) UseDef() string {
 	ret := ""
 
+	// Loop through each function, printing local use-def information
 	for name, fn := range p.Functions {
 		ret += "=== " + name + " ===\n"
 
 		for _, reg := range fn.Registers {
-			ret += regUseDef(reg)
+			ret += regUseDefLocal(reg, fn.Parameters)
 		}
+	}
+
+	// Loop through globals, printing their use-def information
+	ret += "=== Globals ===\n"
+
+	for _, reg := range p.Globals {
+		ret += regUseDefGlobal(reg)
 	}
 
 	return ret
 }
 
-func regUseDef(reg *Register) string {
+func regUseDefLocal(reg *Register, params []*Register) string {
 	ret := ""
 
+	// Handle register definition
 	if reg.Def != nil {
 		ret += fmt.Sprintf("%v\n", reg.Def)
 	} else {
-		ret += fmt.Sprintf("%v not defined\n", reg.Name)
+		isParam := false
+
+		// Check if this local is a parameter
+		for _, p := range params {
+			if reg == p {
+				isParam = true
+				break
+			}
+		}
+
+		// Determine "not defined" message (parameter vs regular local)
+		if isParam {
+			ret += fmt.Sprintf("%v is parameter (not defined)\n", reg.Name)
+		} else {
+			ret += fmt.Sprintf("%v not defined\n", reg.Name)
+		}
 	}
 
-	for _, use := range reg.Uses {
-		ret += fmt.Sprintf("\t%v\n", use)
+	// Handle register uses
+	for use := range reg.Uses {
+		ret += fmt.Sprintf("    %v\n", use)
+	}
+
+	return ret + "\n"
+}
+
+func regUseDefGlobal(reg *Register) string {
+	ret := ""
+
+	ret += fmt.Sprintf("%v is global (not defined)\n", reg.Name)
+
+	for use := range reg.Uses {
+		ret += fmt.Sprintf("    %v\n", use)
 	}
 
 	return ret + "\n"

@@ -624,21 +624,21 @@ func addDefUse(instr Instr) {
 	case *LoadInstr:
 		v.Reg.Def = v
 		if reg, ok := v.Mem.(*Register); ok {
-			reg.Uses = append(reg.Uses, v)
+			reg.AddUse(v)
 		}
 
 	case *StoreInstr:
 		if reg, ok := v.Mem.(*Register); ok {
-			reg.Uses = append(reg.Uses, v)
+			reg.AddUse(v)
 		}
 		if reg, ok := v.Reg.(*Register); ok {
-			reg.Uses = append(reg.Uses, v)
+			reg.AddUse(v)
 		}
 
 	case *GepInstr:
 		v.Target.Def = v
 		if reg, ok := v.Base.(*Register); ok {
-			reg.Uses = append(reg.Uses, v)
+			reg.AddUse(v)
 		}
 
 	case *CallInstr:
@@ -648,46 +648,51 @@ func addDefUse(instr Instr) {
 
 		for _, arg := range v.Arguments {
 			if reg, ok := arg.(*Register); ok {
-				reg.Uses = append(reg.Uses, v)
+				reg.AddUse(v)
 			}
+		}
+
+	case *RetInstr:
+		if reg, ok := v.Src.(*Register); ok {
+			reg.AddUse(v)
 		}
 
 	case *CompInstr:
 		v.Target.Def = v
 		if reg, ok := v.Op1.(*Register); ok {
-			reg.Uses = append(reg.Uses, v)
+			reg.AddUse(v)
 		}
 		if reg, ok := v.Op2.(*Register); ok {
-			reg.Uses = append(reg.Uses, v)
+			reg.AddUse(v)
 		}
 
 	case *BranchInstr:
 		if v.Cond != nil {
 			if reg, ok := v.Cond.(*Register); ok {
-				reg.Uses = append(reg.Uses, v)
+				reg.AddUse(v)
 			}
 		}
 
 	case *BinaryInstr:
 		v.Target.Def = v
 		if reg, ok := v.Op1.(*Register); ok {
-			reg.Uses = append(reg.Uses, v)
+			reg.AddUse(v)
 		}
 		if reg, ok := v.Op2.(*Register); ok {
-			reg.Uses = append(reg.Uses, v)
+			reg.AddUse(v)
 		}
 
 	case *ConvInstr:
 		v.Target.Def = v
 		if reg, ok := v.Src.(*Register); ok {
-			reg.Uses = append(reg.Uses, v)
+			reg.AddUse(v)
 		}
 
 	case *PhiInstr:
 		v.Target.Def = v
 		for _, phiVal := range v.Values {
 			if reg, ok := phiVal.Value.(*Register); ok {
-				reg.Uses = append(reg.Uses, v)
+				reg.AddUse(v)
 			}
 		}
 	}

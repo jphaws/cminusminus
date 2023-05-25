@@ -259,6 +259,11 @@ func functionFiniLlvmReg(fn *ast.Function, funcEntry *Block,
 		addDefUse(alloc)
 	}
 
+	// Remove registers for local variables (these are unused in the future, at least in reg-based)
+	for _, v := range fn.Locals {
+		delete(locals, v.Name)
+	}
+
 	// Return nothing for a void function
 	if _, ok := fn.ReturnType.(*ast.VoidType); ok {
 		return []Instr{&RetInstr{}}

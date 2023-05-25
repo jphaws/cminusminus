@@ -254,7 +254,23 @@ type Register struct {
 	Name string
 	Type Type
 	Def  Instr
-	Uses []Instr
+	Uses map[Instr]int
+}
+
+func (r *Register) AddUse(instr Instr) {
+	if r.Uses == nil {
+		r.Uses = map[Instr]int{}
+	}
+
+	r.Uses[instr]++
+}
+
+func (r *Register) DeleteUse(instr Instr) {
+	r.Uses[instr]--
+
+	if r.Uses[instr] == 0 {
+		delete(r.Uses, instr)
+	}
 }
 
 func (r Register) GetType() Type {
