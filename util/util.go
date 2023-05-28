@@ -1,0 +1,12 @@
+package util
+
+func RemoveFromSlice[T any](s []T, i int) []T {
+	s[i] = s[len(s)-1]
+	return s[:len(s)-1]
+}
+
+func RemovePointerFromSlice[T any](s []*T, i int) []*T {
+	s[i] = s[len(s)-1]
+	s[len(s)-1] = nil
+	return s[:len(s)-1]
+}

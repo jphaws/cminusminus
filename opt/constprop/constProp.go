@@ -2,10 +2,13 @@ package constprop
 
 import (
 	"fmt"
+	"sync"
 
 	"github.com/keen-cp/compiler-project-c/ir"
+	"github.com/keen-cp/compiler-project-c/util"
 )
 
+// === Structs ===
 type edge struct {
 	src *ir.Block
 	dst *ir.Block
@@ -76,13 +79,18 @@ func (l latticeBottom) String() string {
 	return "bottom"
 }
 
+// === Constant propagation ===
 func PropagateConstants(p *ir.ProgramIr) {
+	var wg sync.WaitGroup
+
 	for _, v := range p.Functions {
-		processCfg(v.Cfg, v.Registers)
+		wg.Add(1)
+		go processCfg(&wg, v.Cfg, v.Registers)
 	}
+	wg.Wait()
 }
 
-func processCfg(b *ir.Block, regs map[string]*ir.Register) {
+func processCfg(wg *sync.WaitGroup, b *ir.Block, regs map[string]*ir.Register) {
 	// Initialize info struct
 	info := &propInfo{
 		regs:            map[*ir.Register]latticeType{},
@@ -106,12 +114,14 @@ func processCfg(b *ir.Block, regs map[string]*ir.Register) {
 	mappedBlocks := map[*ir.Block]bool{}
 	mapInstrsToBlock(b, mappedBlocks, info)
 
+	// Create edge into entry block to kickstart algorithm
 	entryEdge := edge{
 		src: nil,
 		dst: b,
 	}
 	info.flowSet[entryEdge] = struct{}{}
 
+	// Run sparse conditional constant propagation
 	for len(info.flowSet) != 0 || len(info.workSet) != 0 {
 		for edg := range info.flowSet {
 			delete(info.flowSet, edg)
@@ -149,11 +159,8 @@ func processCfg(b *ir.Block, regs map[string]*ir.Register) {
 		}
 	}
 
-	/*
-		fmt.Printf("regs: %v\n", info.regs)
-		fmt.Printf("executableEdges: %v\n", info.executableEdges)
-		fmt.Println()
-	*/
+	cleanup(info)
+	wg.Done()
 }
 
 func mapInstrsToBlock(b *ir.Block, visited map[*ir.Block]bool, info *propInfo) {
@@ -172,16 +179,26 @@ func mapInstrsToBlock(b *ir.Block, visited map[*ir.Block]bool, info *propInfo) {
 		info.instrBlocks[instr] = b
 	}
 
-	// Process next block
-	if b.Next != nil && !visited[b.Next] {
-		mapInstrsToBlock(b.Next, visited, info)
-
-		// Mark edge as initially non-executable
+	// Mark edges as initially non-executable
+	if b.Next != nil {
 		edg := edge{
 			src: b,
 			dst: b.Next,
 		}
 		info.executableEdges[edg] = false
+	}
+
+	if b.Els != nil {
+		edg := edge{
+			src: b,
+			dst: b.Els,
+		}
+		info.executableEdges[edg] = false
+	}
+
+	// Process next block
+	if b.Next != nil && !visited[b.Next] {
+		mapInstrsToBlock(b.Next, visited, info)
 
 	}
 
@@ -442,4 +459,130 @@ func getLatticeType(val ir.Value, info *propInfo) latticeType {
 	}
 
 	return nil
+}
+
+// === Cleanup/removal ===
+func cleanup(info *propInfo) {
+	for reg, lat := range info.regs {
+		if c, ok := lat.(*latticeConst); ok {
+			rewriteUses(reg, c.Literal, info)
+		}
+	}
+
+	// Executable Edges
+	for edg, exec := range info.executableEdges {
+		if !exec {
+			removeEdge(edg.src, edg.dst)
+		}
+	}
+}
+
+func rewriteUses(reg *ir.Register, lit *ir.Literal, info *propInfo) {
+	for instr := range reg.Uses {
+		switch v := instr.(type) {
+		case *ir.LoadInstr:
+			if v.Mem == reg {
+				v.Mem = lit
+				reg.DeleteUse(v)
+			}
+
+		case *ir.StoreInstr:
+			if v.Mem == reg {
+				v.Mem = lit
+				reg.DeleteUse(v)
+			}
+			if v.Reg == reg {
+				v.Reg = lit
+				reg.DeleteUse(v)
+			}
+
+		case *ir.GepInstr:
+			v.Base = lit
+			reg.DeleteUse(v)
+
+		case *ir.CallInstr:
+			for i, arg := range v.Arguments {
+				if arg == reg {
+					v.Arguments[i] = lit
+					reg.DeleteUse(v)
+				}
+			}
+
+		case *ir.RetInstr:
+			v.Src = lit
+			reg.DeleteUse(v)
+
+		case *ir.CompInstr:
+			if v.Op1 == reg {
+				v.Op1 = lit
+				reg.DeleteUse(v)
+			}
+			if v.Op2 == reg {
+				v.Op2 = lit
+				reg.DeleteUse(v)
+			}
+
+		case *ir.BranchInstr:
+			v.Cond = lit
+			reg.DeleteUse(v)
+
+		case *ir.BinaryInstr:
+			if v.Op1 == reg {
+				v.Op1 = lit
+				reg.DeleteUse(v)
+			}
+			if v.Op2 == reg {
+				v.Op2 = lit
+				reg.DeleteUse(v)
+			}
+
+		case *ir.ConvInstr:
+			v.Src = lit
+			reg.DeleteUse(v)
+
+		case *ir.PhiInstr:
+			for _, phiVal := range v.Values {
+				if phiVal.Value == reg {
+					phiVal.Value = lit
+					reg.DeleteUse(v)
+				}
+			}
+		}
+	}
+}
+
+func removeEdge(src *ir.Block, dst *ir.Block) {
+	br := &ir.BranchInstr{}
+
+	// Update/remove the source next and else block pointers
+	if src.Next == dst {
+		br.Next = src.Els
+		src.Next = src.Els
+
+	} else {
+		br.Next = src.Next
+		src.Els = nil
+	}
+
+	// Replace the final branch instruction
+	// The source instructions list is always guaranteed to have at least one instruction (the branch)
+	src.Instrs[len(src.Instrs)-1] = br
+
+	// Remove src from list of previous blocks in dst
+	for i, prev := range dst.Prev {
+		if prev == src {
+			dst.Prev = util.RemovePointerFromSlice(dst.Prev, i)
+			break
+		}
+	}
+
+	// Remove src from all phis (where it is present) in dst
+	for _, phi := range dst.Phis {
+		for i, p := range phi.Values {
+			if p.Block == src {
+				phi.Values = util.RemovePointerFromSlice(phi.Values, i)
+				break
+			}
+		}
+	}
 }
