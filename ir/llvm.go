@@ -2,6 +2,7 @@ package ir
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -119,6 +120,7 @@ type CompInstr struct {
 	Condition Condition
 	Op1       Value
 	Op2       Value
+	IsGuard   bool
 }
 
 func (c CompInstr) instrFunc() {}
@@ -248,6 +250,7 @@ func (o Operator) String() string {
 // === Value ====
 type Value interface {
 	GetType() Type
+	IsEqual(v Value) bool
 }
 
 type Register struct {
@@ -277,6 +280,14 @@ func (r Register) GetType() Type {
 	return r.Type
 }
 
+func (r *Register) IsEqual(v Value) bool {
+	if reg, ok := v.(*Register); ok {
+		return r == reg
+	}
+
+	return false
+}
+
 func (r Register) String() string {
 	return r.Name
 }
@@ -288,6 +299,129 @@ type Literal struct {
 
 func (l Literal) GetType() Type {
 	return l.Type
+}
+
+// Check if a literal is equal to some other value
+// Assumes that the type (.GetType()) for both l and v is the same
+func (l *Literal) IsEqual(v Value) bool {
+	var ol *Literal
+	var ok bool
+	if ol, ok = v.(*Literal); !ok {
+		return false
+	}
+
+	// Assumption: literals with the same value are always represented by the same string
+	return l.Value == ol.Value
+}
+
+func (l *Literal) DoCondition(ol *Literal, cond Condition, isGuard bool) (ret *Literal, err error) {
+	// Check for literal "null" equality (or non-equality)
+	// The only literal pointers in Mini are nulls, so we can get away with a simple EqualCondition
+	// check here. Uses default value for ret if cond is NotEqualCondition
+	if _, ok := l.GetType().(*PointerType); ok {
+		ret = createCondLiteral(cond == EqualCondition, isGuard)
+		return
+	}
+
+	// Convert integer literals
+	var thisVal, thatVal int
+	thisVal, err = strconv.Atoi(l.Value)
+	if err != nil {
+		return
+	}
+
+	thatVal, err = strconv.Atoi(ol.Value)
+	if err != nil {
+		return
+	}
+
+	// Perform comparison
+	var result bool
+	switch cond {
+	case EqualCondition:
+		result = thisVal == thatVal
+	case NotEqualCondition:
+		result = thisVal != thatVal
+	case GreaterThanCondition:
+		result = thisVal > thatVal
+	case GreaterEqualCondition:
+		result = thisVal >= thatVal
+	case LessThanCondition:
+		result = thisVal < thatVal
+	case LessEqualCondition:
+		result = thisVal <= thatVal
+	default:
+		panic("Unsupported condition")
+	}
+
+	ret = createCondLiteral(result, isGuard)
+	return
+}
+
+func createCondLiteral(b bool, isGuard bool) *Literal {
+	val := "0"
+	if b {
+		val = "1"
+	}
+
+	width := 64
+	if isGuard {
+		width = 1
+	}
+
+	return &Literal{
+		Value: val,
+		Type:  &IntType{width},
+	}
+}
+
+func (l *Literal) DoOperation(ol *Literal, op Operator) (ret *Literal, err error) {
+	var thisVal, thatVal, result int
+	thisVal, err = strconv.Atoi(l.Value)
+	if err != nil {
+		return
+	}
+
+	thatVal, err = strconv.Atoi(ol.Value)
+	if err != nil {
+		return
+	}
+
+	switch op {
+	case AddOperator:
+		result = thisVal + thatVal
+	case SubOperator:
+		result = thisVal - thatVal
+	case MulOperator:
+		result = thisVal * thatVal
+	case DivOperator:
+		if thatVal == 0 {
+			err = fmt.Errorf("Division by zero")
+		} else {
+			result = thisVal / thatVal
+		}
+	case AndOperator:
+		result = thisVal & thatVal
+	case OrOperator:
+		result = thisVal | thatVal
+	case XorOperator:
+		result = thisVal ^ thatVal
+	default:
+		panic("Unsupported operator")
+	}
+
+	ret = &Literal{
+		Value: strconv.Itoa(result),
+		Type:  l.GetType(),
+	}
+
+	return
+}
+
+// Check the bool value of a literal
+// Assumes that l is a boolean (has value "0" or "1")
+func (l Literal) ToBool() bool {
+	return l.Value == "1"
 }
 
 func (l Literal) String() string {

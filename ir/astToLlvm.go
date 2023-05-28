@@ -282,6 +282,7 @@ func notOpToLlvm(not *ast.UnaryExpression, curr *Block,
 
 	instrs = append(instrs, bin)
 	val = reg
+
 	return
 }
 
@@ -312,6 +313,7 @@ func minusOpToLlvm(not *ast.UnaryExpression, curr *Block,
 
 	instrs = append(instrs, bin)
 	val = reg
+
 	return
 }
 
@@ -375,6 +377,7 @@ func binaryExpressionToLlvm(bin *ast.BinaryExpression, curr *Block,
 			Condition: v,
 			Op1:       lVal,
 			Op2:       rVal,
+			IsGuard:   isGuard,
 		}
 		addDefUse(cmp)
 

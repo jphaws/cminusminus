@@ -11,6 +11,7 @@ import (
 	"github.com/keen-cp/compiler-project-c/ast"
 	"github.com/keen-cp/compiler-project-c/color"
 	"github.com/keen-cp/compiler-project-c/ir"
+	"github.com/keen-cp/compiler-project-c/opt/constprop"
 	"github.com/keen-cp/compiler-project-c/parser"
 	"github.com/keen-cp/compiler-project-c/parser/mantlr"
 
@@ -69,6 +70,11 @@ func main() {
 	// Create IR
 	rep := ir.CreateIr(root, tables, opts.stackIr)
 
+	// Run constant propagation
+	if opts.constProp {
+		constprop.PropagateConstants(rep)
+	}
+
 	// Generate output string
 	var output string
 	if opts.graph {
@@ -97,6 +103,7 @@ type Options struct {
 	graph      bool
 	defUse     bool
 	stackIr    bool
+	constProp  bool
 }
 
 func parseArgs() (opts Options, args []string) {
@@ -113,6 +120,7 @@ func parseArgs() (opts Options, args []string) {
 	flags.BoolVar(&opts.stackIr, "stack", false, "use a stack-based intermediate representation")
 	flags.BoolVar(&opts.graph, "graph", false, "output a control flow graph in the dot language")
 	flags.BoolVar(&opts.defUse, "def-use", false, "output def-use chains for each function")
+	flags.BoolVar(&opts.constProp, "const-prop", true, "run constant propagation optimization")
 
 	// Parse flags
 	err := flags.Parse(os.Args[1:])
