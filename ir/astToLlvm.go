@@ -333,10 +333,7 @@ func binaryExpressionToLlvm(bin *ast.BinaryExpression, curr *Block,
 	case Operator:
 		// Truncate expressions (if needed)
 		switch v {
-		case AndOperator:
-			fallthrough
-
-		case OrOperator:
+		case AndOperator, OrOperator:
 			var convInstrs []Instr
 			convInstrs, lVal = convertBoolWidth(lVal, locals, isGuard)
 			instrs = append(instrs, convInstrs...)
@@ -568,9 +565,7 @@ func createBranch(cond Value, next *Block, els *Block) Instr {
 
 func typeToLlvm(typ ast.Type) Type {
 	switch v := typ.(type) {
-	case *ast.IntType:
-		return &IntType{64}
-	case *ast.BoolType:
+	case *ast.IntType, *ast.BoolType:
 		return &IntType{64}
 	case *ast.StructType:
 		return &PointerType{&StructType{v.Id}}

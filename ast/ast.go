@@ -40,9 +40,7 @@ func (i IntType) String() string {
 
 func (i IntType) canConvertTo(t Type) bool {
 	switch t.(type) {
-	case *IntType:
-		return true
-	case *ErrorType:
+	case *IntType, *ErrorType:
 		return true
 	}
 
@@ -61,9 +59,7 @@ func (b BoolType) String() string {
 
 func (b BoolType) canConvertTo(t Type) bool {
 	switch t.(type) {
-	case *BoolType:
-		return true
-	case *ErrorType:
+	case *BoolType, *ErrorType:
 		return true
 	}
 
@@ -86,9 +82,7 @@ func (s StructType) canConvertTo(t Type) bool {
 	switch v := t.(type) {
 	case *StructType:
 		return v.Id == "" || s.Id == v.Id
-	case *NullType:
-		return true
-	case *ErrorType:
+	case *NullType, *ErrorType:
 		return true
 	}
 
@@ -118,9 +112,7 @@ func (n NullType) String() string {
 
 func (n NullType) canConvertTo(t Type) bool {
 	switch t.(type) {
-	case *NullType:
-		return true
-	case *StructType:
+	case *NullType, *StructType:
 		return true
 	}
 

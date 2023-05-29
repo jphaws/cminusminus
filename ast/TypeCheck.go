@@ -671,13 +671,7 @@ func typeCheckBinaryExpression(bin *BinaryExpression,
 
 	switch op {
 	// Arithmetic operators (take int, return int)
-	case TimesOperator:
-		fallthrough
-	case DivideOperator:
-		fallthrough
-	case PlusOperator:
-		fallthrough
-	case MinusOperator:
+	case TimesOperator, DivideOperator, PlusOperator, MinusOperator:
 		if !lType.canConvertTo(&IntType{}) {
 			e := createError("cannot apply arithmetic operator '%v' on non-integer expression "+
 				"(of type %v)", pos, op, lType)
@@ -692,13 +686,7 @@ func typeCheckBinaryExpression(bin *BinaryExpression,
 		typ = &IntType{}
 
 	// Relational (take int, return bool)
-	case LessThanOperator:
-		fallthrough
-	case GreaterThanOperator:
-		fallthrough
-	case LessEqualOperator:
-		fallthrough
-	case GreaterEqualOperator:
+	case LessThanOperator, GreaterThanOperator, LessEqualOperator, GreaterEqualOperator:
 		if !lType.canConvertTo(&IntType{}) {
 			e := createError("cannot apply relational operator '%v' on non-integer expression "+
 				"(of type %v)", pos, op, lType)
@@ -713,9 +701,7 @@ func typeCheckBinaryExpression(bin *BinaryExpression,
 		typ = &BoolType{}
 
 	// Equality operators (take int/struct, return bool)
-	case EqualOperator:
-		fallthrough
-	case NotEqualOperator:
+	case EqualOperator, NotEqualOperator:
 		if lType.canConvertTo(&IntType{}) {
 			if !rType.canConvertTo(&IntType{}) {
 				e := createError("cannot apply relational operator '%v' to expressions "+
@@ -739,9 +725,7 @@ func typeCheckBinaryExpression(bin *BinaryExpression,
 		typ = &BoolType{}
 
 	// Boolean operators (take bool, return bool)
-	case AndOperator:
-		fallthrough
-	case OrOperator:
+	case AndOperator, OrOperator:
 		if !lType.canConvertTo(&BoolType{}) {
 			e := createError("cannot apply boolean operator '%v' on non-boolean expression "+
 				"(of type %v)", pos, op, lType)
