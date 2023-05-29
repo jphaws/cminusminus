@@ -12,6 +12,7 @@ import (
 	"github.com/keen-cp/compiler-project-c/color"
 	"github.com/keen-cp/compiler-project-c/ir"
 	"github.com/keen-cp/compiler-project-c/opt/constprop"
+	"github.com/keen-cp/compiler-project-c/opt/trivialphi"
 	"github.com/keen-cp/compiler-project-c/opt/uselesselim"
 	"github.com/keen-cp/compiler-project-c/parser"
 	"github.com/keen-cp/compiler-project-c/parser/mantlr"
@@ -76,6 +77,11 @@ func main() {
 		constprop.PropagateConstants(rep)
 	}
 
+	// Run trivial phi removal
+	if !opts.stackIr && opts.trivialPhi {
+		trivialphi.RemoveTrivialPhis(rep)
+	}
+
 	// Run useless code elimination
 	if opts.uselessElim {
 		uselesselim.EliminateUselessCode(rep)
@@ -110,6 +116,7 @@ type Options struct {
 	defUse      bool
 	stackIr     bool
 	constProp   bool
+	trivialPhi  bool
 	uselessElim bool
 }
 
@@ -128,6 +135,7 @@ func parseArgs() (opts Options, args []string) {
 	flags.BoolVar(&opts.graph, "graph", false, "output a control flow graph in the dot language")
 	flags.BoolVar(&opts.defUse, "def-use", false, "output def-use chains for each function")
 	flags.BoolVar(&opts.constProp, "const-prop", true, "run constant propagation optimization")
+	flags.BoolVar(&opts.trivialPhi, "trivial-phi", true, "run trivial phi removal optimization")
 	flags.BoolVar(&opts.uselessElim, "useless-elim", true, "run useless code elimination optimization")
 
 	// Parse flags

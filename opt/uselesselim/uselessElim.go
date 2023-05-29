@@ -14,6 +14,7 @@ func EliminateUselessCode(p *ir.ProgramIr) {
 		wg.Add(1)
 		go processFunction(v, &wg)
 	}
+
 	wg.Wait()
 }
 

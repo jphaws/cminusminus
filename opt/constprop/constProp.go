@@ -88,6 +88,7 @@ func PropagateConstants(p *ir.ProgramIr) {
 		wg.Add(1)
 		go processFunction(v, &wg)
 	}
+
 	wg.Wait()
 }
 
@@ -436,11 +437,6 @@ func cleanup(info *propInfo) {
 	for reg, lat := range info.regs {
 		if c, ok := lat.(*latticeConst); ok {
 			opt.RewriteUses(reg, c.Literal)
-		}
-	}
-
-	for reg, lat := range info.regs {
-		if _, ok := lat.(*latticeConst); ok {
 			opt.DeleteInstr(reg.Def, info.instrs)
 		}
 	}

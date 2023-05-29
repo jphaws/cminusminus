@@ -92,88 +92,122 @@ func DeleteInstr(instr ir.Instr, instrBlocks map[ir.Instr]*ir.Block) {
 		}
 	}
 
-	// Remove instruction from block instruction slice
+	// Remove instruction from relevant block instruction slice
 	defBlock := instrBlocks[instr]
 	delete(instrBlocks, instr)
 
-	for i, v := range defBlock.Instrs {
-		if v == instr {
-			defBlock.Instrs = util.OrderedRemoveFromSlice(defBlock.Instrs, i)
-			v = nil // For GC efficiency
+	switch instr.(type) {
+	case *ir.PhiInstr:
+		for i, v := range defBlock.Phis {
+			if v == instr {
+				defBlock.Phis = util.OrderedRemovePointerFromSlice(defBlock.Phis, i)
+				return
+			}
+		}
+
+	case *ir.AllocInstr:
+		for i, v := range defBlock.Allocs {
+			if v == instr {
+				defBlock.Allocs = util.OrderedRemovePointerFromSlice(defBlock.Allocs, i)
+				return
+			}
+		}
+
+	default:
+		for i, v := range defBlock.Instrs {
+			if v == instr {
+				defBlock.Instrs = util.OrderedRemoveFromSlice(defBlock.Instrs, i)
+				v = nil // For GC efficiency
+				return
+			}
 		}
 	}
 }
 
 func RewriteUses(oldReg *ir.Register, newVal ir.Value) {
 	for instr := range oldReg.Uses {
+		numRemoved := 0
+
 		switch v := instr.(type) {
 		case *ir.LoadInstr:
-			if v.Mem == oldReg {
-				v.Mem = newVal
-				oldReg.DeleteUse(v)
-			}
+			v.Mem = newVal
+			numRemoved++
 
 		case *ir.StoreInstr:
 			if v.Mem == oldReg {
 				v.Mem = newVal
-				oldReg.DeleteUse(v)
+				numRemoved++
 			}
 			if v.Reg == oldReg {
 				v.Reg = newVal
-				oldReg.DeleteUse(v)
+				numRemoved++
 			}
 
 		case *ir.GepInstr:
 			v.Base = newVal
-			oldReg.DeleteUse(v)
+			numRemoved++
 
 		case *ir.CallInstr:
 			for i, arg := range v.Arguments {
 				if arg == oldReg {
 					v.Arguments[i] = newVal
-					oldReg.DeleteUse(v)
+					numRemoved++
 				}
 			}
 
 		case *ir.RetInstr:
 			v.Src = newVal
 			oldReg.DeleteUse(v)
+			numRemoved++
 
 		case *ir.CompInstr:
 			if v.Op1 == oldReg {
 				v.Op1 = newVal
-				oldReg.DeleteUse(v)
+				numRemoved++
 			}
 			if v.Op2 == oldReg {
 				v.Op2 = newVal
-				oldReg.DeleteUse(v)
+				numRemoved++
 			}
 
 		case *ir.BranchInstr:
 			v.Cond = newVal
 			oldReg.DeleteUse(v)
+			numRemoved++
 
 		case *ir.BinaryInstr:
 			if v.Op1 == oldReg {
 				v.Op1 = newVal
-				oldReg.DeleteUse(v)
+				numRemoved++
 			}
 			if v.Op2 == oldReg {
 				v.Op2 = newVal
-				oldReg.DeleteUse(v)
+				numRemoved++
 			}
 
 		case *ir.ConvInstr:
 			v.Src = newVal
 			oldReg.DeleteUse(v)
+			numRemoved++
 
 		case *ir.PhiInstr:
 			for _, phiVal := range v.Values {
 				if phiVal.Value == oldReg {
 					phiVal.Value = newVal
-					oldReg.DeleteUse(v)
+					numRemoved++
 				}
 			}
 		}
+
+		for i := 0; i < numRemoved; i++ {
+			oldReg.DeleteUse(instr)
+			addUseIfRegister(newVal, instr)
+		}
+	}
+}
+
+func addUseIfRegister(val ir.Value, instr ir.Instr) {
+	if reg, ok := val.(*ir.Register); ok {
+		reg.AddUse(instr)
 	}
 }

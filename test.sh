@@ -15,6 +15,7 @@ ACTUAL_LONGER="output.longer.actual"
 CLEANUP=true
 STACK=""
 CONST_PROP=""
+TRIVIAL=""
 USELESS=""
 RET=0
 LOG="test.log"
@@ -67,7 +68,7 @@ compile_benchmark() {
 
    set +e
    # Compile mini source code to LLVM
-   $MC -o $minillvm $STACK $CONST_PROP $USELESS $mini 2>> $LOG
+   $MC -o $minillvm $STACK $CONST_PROP $TRIVIAL $USELESS $mini 2>> $LOG
    if [ "$?" -ne 0 ]; then
       print_error $1 "mini->llvm compilation failed"
       RET=$((RET + 1))
@@ -163,6 +164,9 @@ if [ "$#" -gt 0 ]; then
             ;;
          '-no-const-prop' | '--no-const-prop')
             CONST_PROP='--const-prop=false'
+            ;;
+         '-no-trivial-phi' | '--no-trivial-phi')
+            TRIVIAL='--trivial-phi=false'
             ;;
          '-no-useless-elim' | '--no-useless-elim')
             USELESS='--useless-elim=false'
