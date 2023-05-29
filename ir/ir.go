@@ -38,6 +38,7 @@ type Function struct {
 	Parameters []*Register
 	ReturnType Type
 	Registers  map[string]*Register
+	Instrs     map[Instr]*Block
 	Cfg        *Block
 }
 
@@ -280,8 +281,9 @@ func CreateIr(root *ast.Root, tables *ast.Tables, stack bool) *ProgramIr {
 
 		// Add non-function types to the symbol table
 		symbolTable[k] = &Register{
-			Name: "@" + k,
-			Type: &PointerType{typeToLlvm(v)},
+			Name:   "@" + k,
+			Type:   &PointerType{typeToLlvm(v)},
+			Global: true,
 		}
 	}
 

@@ -147,6 +147,7 @@ func processFunction(fn *ast.Function, ch chan *Function) {
 	// Create IR function wrapper
 	ret := &Function{
 		ReturnType: typeToLlvm(fn.ReturnType),
+		Instrs:     map[Instr]*Block{},
 		Cfg:        entry,
 	}
 
@@ -203,6 +204,10 @@ func processFunction(fn *ast.Function, ch chan *Function) {
 		instrs = functionFiniLlvmReg(fn, entry, exit, ret.Registers)
 	}
 	exit.Instrs = append(exit.Instrs, instrs...)
+
+	// Map instructions to their respective blocks
+	visited := map[*Block]bool{}
+	mapInstrsToBlock(entry, visited, ret.Instrs)
 
 	ch <- ret
 }
@@ -398,4 +403,31 @@ func createBlock(function string, typ blockType, prev []*Block) *Block {
 	ret.types = append(ret.types, typ)
 
 	return ret
+}
+
+func mapInstrsToBlock(curr *Block, visited map[*Block]bool, instrs map[Instr]*Block) {
+	visited[curr] = true
+
+	// Map each instruction to its owner block
+	for _, phi := range curr.Phis {
+		instrs[phi] = curr
+	}
+
+	for _, alloc := range curr.Allocs {
+		instrs[alloc] = curr
+	}
+
+	for _, instr := range curr.Instrs {
+		instrs[instr] = curr
+	}
+
+	// Process next block
+	if curr.Next != nil && !visited[curr.Next] {
+		mapInstrsToBlock(curr.Next, visited, instrs)
+	}
+
+	// Process else block
+	if curr.Els != nil && !visited[curr.Els] {
+		mapInstrsToBlock(curr.Els, visited, instrs)
+	}
 }

@@ -10,3 +10,7 @@ func RemovePointerFromSlice[T any](s []*T, i int) []*T {
 	s[len(s)-1] = nil
 	return s[:len(s)-1]
 }
+
+func OrderedRemoveFromSlice[T any](s []T, i int) []T {
+	return append(s[:i], s[i+1:]...)
+}

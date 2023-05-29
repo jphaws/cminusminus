@@ -254,13 +254,18 @@ type Value interface {
 }
 
 type Register struct {
-	Name string
-	Type Type
-	Def  Instr
-	Uses map[Instr]int
+	Name   string
+	Type   Type
+	Global bool
+	Def    Instr
+	Uses   map[Instr]int
 }
 
 func (r *Register) AddUse(instr Instr) {
+	if r.Global {
+		return
+	}
+
 	if r.Uses == nil {
 		r.Uses = map[Instr]int{}
 	}
@@ -269,6 +274,10 @@ func (r *Register) AddUse(instr Instr) {
 }
 
 func (r *Register) DeleteUse(instr Instr) {
+	if r.Global {
+		return
+	}
+
 	r.Uses[instr]--
 
 	if r.Uses[instr] == 0 {

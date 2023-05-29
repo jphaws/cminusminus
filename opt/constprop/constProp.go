@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"github.com/keen-cp/compiler-project-c/ir"
+	"github.com/keen-cp/compiler-project-c/opt"
 	"github.com/keen-cp/compiler-project-c/util"
 )
 
@@ -34,7 +35,7 @@ type propInfo struct {
 	workSet         map[*ir.Register]struct{}
 	flowSet         map[edge]struct{}
 	executableEdges map[edge]bool
-	instrBlocks     map[ir.Instr]*ir.Block
+	instrs          map[ir.Instr]*ir.Block
 }
 
 type latticeType interface {
@@ -85,12 +86,12 @@ func PropagateConstants(p *ir.ProgramIr) {
 
 	for _, v := range p.Functions {
 		wg.Add(1)
-		go processCfg(&wg, v.Cfg, v.Registers)
+		go processFunction(v, &wg)
 	}
 	wg.Wait()
 }
 
-func processCfg(wg *sync.WaitGroup, b *ir.Block, regs map[string]*ir.Register) {
+func processFunction(fn *ir.Function, wg *sync.WaitGroup) {
 	// Initialize info struct
 	info := &propInfo{
 		regs:            map[*ir.Register]latticeType{},
@@ -98,11 +99,11 @@ func processCfg(wg *sync.WaitGroup, b *ir.Block, regs map[string]*ir.Register) {
 		workSet:         map[*ir.Register]struct{}{},
 		flowSet:         map[edge]struct{}{},
 		executableEdges: map[edge]bool{},
-		instrBlocks:     map[ir.Instr]*ir.Block{},
+		instrs:          fn.Instrs,
 	}
 
 	// Set initial lattice type for each register in the function
-	for _, v := range regs {
+	for _, v := range fn.Registers {
 		if v.Def == nil {
 			info.regs[v] = &latticeBottom{}
 		} else {
@@ -110,14 +111,13 @@ func processCfg(wg *sync.WaitGroup, b *ir.Block, regs map[string]*ir.Register) {
 		}
 	}
 
-	// Map instructions back to their owner blocks
-	mappedBlocks := map[*ir.Block]bool{}
-	mapInstrsToBlock(b, mappedBlocks, info)
+	// Mark all edges as initially non-executable
+	markExecutableEdges(fn.Cfg, info.executableEdges)
 
 	// Create edge into entry block to kickstart algorithm
 	entryEdge := edge{
 		src: nil,
-		dst: b,
+		dst: fn.Cfg,
 	}
 	info.flowSet[entryEdge] = struct{}{}
 
@@ -150,7 +150,7 @@ func processCfg(wg *sync.WaitGroup, b *ir.Block, regs map[string]*ir.Register) {
 				if phi, ok := use.(*ir.PhiInstr); ok {
 					processPhiInstr(phi, info)
 
-				} else if info.visitedBlocks[info.instrBlocks[use]] {
+				} else if info.visitedBlocks[info.instrs[use]] {
 					processInstr(use, info)
 				}
 			}
@@ -163,55 +163,25 @@ func processCfg(wg *sync.WaitGroup, b *ir.Block, regs map[string]*ir.Register) {
 	wg.Done()
 }
 
-func mapInstrsToBlock(b *ir.Block, visited map[*ir.Block]bool, info *propInfo) {
-	visited[b] = true
-
-	// Map each instruction to its owner block
-	for _, phi := range b.Phis {
-		info.instrBlocks[phi] = b
+func markExecutableEdges(b *ir.Block, executableEdges map[edge]bool) {
+	edg := edge{
+		src: b,
+		dst: b.Next,
 	}
 
-	for _, alloc := range b.Allocs {
-		info.instrBlocks[alloc] = b
+	// Process next edge (if not already visited)
+	_, ok := executableEdges[edg]
+	if b.Next != nil && !ok {
+		executableEdges[edg] = false
+		markExecutableEdges(b.Next, executableEdges)
 	}
 
-	for _, instr := range b.Instrs {
-		info.instrBlocks[instr] = b
-	}
-
-	// Mark edges as initially non-executable
-	if b.Next != nil {
-		edg := edge{
-			src: b,
-			dst: b.Next,
-		}
-		info.executableEdges[edg] = false
-	}
-
-	if b.Els != nil {
-		edg := edge{
-			src: b,
-			dst: b.Els,
-		}
-		info.executableEdges[edg] = false
-	}
-
-	// Process next block
-	if b.Next != nil && !visited[b.Next] {
-		mapInstrsToBlock(b.Next, visited, info)
-
-	}
-
-	// Process else block
-	if b.Els != nil && !visited[b.Els] {
-		mapInstrsToBlock(b.Els, visited, info)
-
-		// Mark edge as initially non-executable
-		edg := edge{
-			src: b,
-			dst: b.Els,
-		}
-		info.executableEdges[edg] = false
+	// Process else edge (if not already visited)
+	edg.dst = b.Els
+	_, ok = executableEdges[edg]
+	if b.Els != nil && !ok {
+		executableEdges[edg] = false
+		markExecutableEdges(b.Els, executableEdges)
 	}
 }
 
@@ -241,7 +211,7 @@ func processPhiInstr(phi *ir.PhiInstr, info *propInfo) {
 	for _, phiVal := range phi.Values {
 		edge := edge{
 			src: phiVal.Block,
-			dst: info.instrBlocks[phi],
+			dst: info.instrs[phi],
 		}
 
 		// Get current lattice type for this operand (or top if the operand's corresponsing edge is
@@ -363,12 +333,12 @@ func processCompInstr(comp *ir.CompInstr, info *propInfo) latticeType {
 func processBranchInstr(br *ir.BranchInstr, info *propInfo) {
 	// Create outgoing edges
 	nextEdge := edge{
-		src: info.instrBlocks[br],
+		src: info.instrs[br],
 		dst: br.Next,
 	}
 
 	elseEdge := edge{
-		src: info.instrBlocks[br],
+		src: info.instrs[br],
 		dst: br.Els,
 	}
 
@@ -465,7 +435,13 @@ func getLatticeType(val ir.Value, info *propInfo) latticeType {
 func cleanup(info *propInfo) {
 	for reg, lat := range info.regs {
 		if c, ok := lat.(*latticeConst); ok {
-			rewriteUses(reg, c.Literal, info)
+			opt.RewriteUses(reg, c.Literal)
+		}
+	}
+
+	for reg, lat := range info.regs {
+		if _, ok := lat.(*latticeConst); ok {
+			opt.DeleteInstr(reg.Def, info.instrs)
 		}
 	}
 
@@ -473,80 +449,6 @@ func cleanup(info *propInfo) {
 	for edg, exec := range info.executableEdges {
 		if !exec {
 			removeEdge(edg.src, edg.dst)
-		}
-	}
-}
-
-func rewriteUses(reg *ir.Register, lit *ir.Literal, info *propInfo) {
-	for instr := range reg.Uses {
-		switch v := instr.(type) {
-		case *ir.LoadInstr:
-			if v.Mem == reg {
-				v.Mem = lit
-				reg.DeleteUse(v)
-			}
-
-		case *ir.StoreInstr:
-			if v.Mem == reg {
-				v.Mem = lit
-				reg.DeleteUse(v)
-			}
-			if v.Reg == reg {
-				v.Reg = lit
-				reg.DeleteUse(v)
-			}
-
-		case *ir.GepInstr:
-			v.Base = lit
-			reg.DeleteUse(v)
-
-		case *ir.CallInstr:
-			for i, arg := range v.Arguments {
-				if arg == reg {
-					v.Arguments[i] = lit
-					reg.DeleteUse(v)
-				}
-			}
-
-		case *ir.RetInstr:
-			v.Src = lit
-			reg.DeleteUse(v)
-
-		case *ir.CompInstr:
-			if v.Op1 == reg {
-				v.Op1 = lit
-				reg.DeleteUse(v)
-			}
-			if v.Op2 == reg {
-				v.Op2 = lit
-				reg.DeleteUse(v)
-			}
-
-		case *ir.BranchInstr:
-			v.Cond = lit
-			reg.DeleteUse(v)
-
-		case *ir.BinaryInstr:
-			if v.Op1 == reg {
-				v.Op1 = lit
-				reg.DeleteUse(v)
-			}
-			if v.Op2 == reg {
-				v.Op2 = lit
-				reg.DeleteUse(v)
-			}
-
-		case *ir.ConvInstr:
-			v.Src = lit
-			reg.DeleteUse(v)
-
-		case *ir.PhiInstr:
-			for _, phiVal := range v.Values {
-				if phiVal.Value == reg {
-					phiVal.Value = lit
-					reg.DeleteUse(v)
-				}
-			}
 		}
 	}
 }
