@@ -14,6 +14,8 @@ ACTUAL="output.actual"
 ACTUAL_LONGER="output.longer.actual"
 CLEANUP=true
 STACK=""
+CONST_PROP=""
+USELESS=""
 RET=0
 LOG="test.log"
 ALL=true
@@ -65,7 +67,7 @@ compile_benchmark() {
 
    set +e
    # Compile mini source code to LLVM
-   $MC -o $minillvm $STACK $mini 2>> $LOG
+   $MC -o $minillvm $STACK $CONST_PROP $USELESS $mini 2>> $LOG
    if [ "$?" -ne 0 ]; then
       print_error $1 "mini->llvm compilation failed"
       RET=$((RET + 1))
@@ -158,6 +160,12 @@ if [ "$#" -gt 0 ]; then
             ;;
          '-stack' | '--stack')
             STACK='--stack'
+            ;;
+         '-no-const-prop' | '--no-const-prop')
+            CONST_PROP='--const-prop=false'
+            ;;
+         '-no-useless-elim' | '--no-useless-elim')
+            USELESS='--useless-elim=false'
             ;;
          '-'*)
             printf 'invalid option: %s\n' "$arg"

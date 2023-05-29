@@ -12,6 +12,7 @@ import (
 	"github.com/keen-cp/compiler-project-c/color"
 	"github.com/keen-cp/compiler-project-c/ir"
 	"github.com/keen-cp/compiler-project-c/opt/constprop"
+	"github.com/keen-cp/compiler-project-c/opt/uselesselim"
 	"github.com/keen-cp/compiler-project-c/parser"
 	"github.com/keen-cp/compiler-project-c/parser/mantlr"
 
@@ -75,6 +76,11 @@ func main() {
 		constprop.PropagateConstants(rep)
 	}
 
+	// Run useless code elimination
+	if opts.uselessElim {
+		uselesselim.EliminateUselessCode(rep)
+	}
+
 	// Generate output string
 	var output string
 	if opts.graph {
@@ -99,11 +105,12 @@ func main() {
 }
 
 type Options struct {
-	outputFile string
-	graph      bool
-	defUse     bool
-	stackIr    bool
-	constProp  bool
+	outputFile  string
+	graph       bool
+	defUse      bool
+	stackIr     bool
+	constProp   bool
+	uselessElim bool
 }
 
 func parseArgs() (opts Options, args []string) {
@@ -121,6 +128,7 @@ func parseArgs() (opts Options, args []string) {
 	flags.BoolVar(&opts.graph, "graph", false, "output a control flow graph in the dot language")
 	flags.BoolVar(&opts.defUse, "def-use", false, "output def-use chains for each function")
 	flags.BoolVar(&opts.constProp, "const-prop", true, "run constant propagation optimization")
+	flags.BoolVar(&opts.uselessElim, "useless-elim", true, "run useless code elimination optimization")
 
 	// Parse flags
 	err := flags.Parse(os.Args[1:])

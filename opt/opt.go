@@ -42,8 +42,10 @@ func DeleteInstr(instr ir.Instr, instrBlocks map[ir.Instr]*ir.Block) {
 		}
 
 	case *ir.RetInstr:
-		if reg, ok := v.Src.(*ir.Register); ok {
-			reg.DeleteUse(v)
+		if v.Src != nil {
+			if reg, ok := v.Src.(*ir.Register); ok {
+				reg.DeleteUse(v)
+			}
 		}
 
 	case *ir.CompInstr:
@@ -81,6 +83,8 @@ func DeleteInstr(instr ir.Instr, instrBlocks map[ir.Instr]*ir.Block) {
 		}
 
 	case *ir.PhiInstr:
+		v.Target.Def = nil
+
 		for _, phiVal := range v.Values {
 			if reg, ok := phiVal.Value.(*ir.Register); ok {
 				reg.DeleteUse(v)
