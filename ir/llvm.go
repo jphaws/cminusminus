@@ -74,7 +74,7 @@ func (c CallInstr) String() string {
 	args := make([]string, 0, len(c.Arguments))
 
 	// Only print a target if it exists
-	target := ""
+	var target string
 	if c.Target != nil {
 		target = fmt.Sprintf("%v = ", c.Target)
 	}
@@ -85,7 +85,7 @@ func (c CallInstr) String() string {
 	}
 
 	// Handle variadic argument types (if needed)
-	vari := ""
+	var vari string
 	if c.Variadic > 0 {
 		variTypes := make([]string, 0, c.Variadic)
 

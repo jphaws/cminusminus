@@ -179,7 +179,7 @@ func (b *Block) toLlvm() string {
 }
 
 func (p ProgramIr) UseDef() string {
-	ret := ""
+	var ret string
 
 	// Loop through each function, printing local use-def information
 	for name, fn := range p.Functions {
@@ -201,7 +201,7 @@ func (p ProgramIr) UseDef() string {
 }
 
 func regUseDefLocal(reg *Register, params []*Register) string {
-	ret := ""
+	var ret string
 
 	// Handle register definition
 	if reg.Def != nil {
@@ -234,7 +234,7 @@ func regUseDefLocal(reg *Register, params []*Register) string {
 }
 
 func regUseDefGlobal(reg *Register) string {
-	ret := ""
+	var ret string
 
 	ret += fmt.Sprintf("%v is global (not defined)\n", reg.Name)
 
