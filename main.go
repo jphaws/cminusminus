@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/keen-cp/compiler-project-c/asm"
 	"github.com/keen-cp/compiler-project-c/ast"
 	"github.com/keen-cp/compiler-project-c/color"
 	"github.com/keen-cp/compiler-project-c/ir"
@@ -93,8 +94,13 @@ func main() {
 		output = rep.ToDot()
 	} else if opts.defUse {
 		output = rep.UseDef()
-	} else {
+	} else if opts.llvm {
 		output = rep.ToLlvm()
+
+		// Generate assembly output
+	} else {
+		asm := asm.CreateAsm(rep)
+		output = asm.ToAsm()
 	}
 
 	// Write output
@@ -112,6 +118,7 @@ func main() {
 
 type Options struct {
 	outputFile  string
+	llvm        bool
 	graph       bool
 	defUse      bool
 	stackIr     bool
@@ -130,13 +137,22 @@ func parseArgs() (opts Options, args []string) {
 		flags.PrintDefaults()
 	}
 
-	flags.StringVar(&opts.outputFile, "o", "", "output to `filename`")
-	flags.BoolVar(&opts.stackIr, "stack", false, "use a stack-based intermediate representation")
-	flags.BoolVar(&opts.graph, "graph", false, "output a control flow graph in the dot language")
-	flags.BoolVar(&opts.defUse, "def-use", false, "output def-use chains for each function")
-	flags.BoolVar(&opts.constProp, "const-prop", true, "run constant propagation optimization")
-	flags.BoolVar(&opts.trivialPhi, "trivial-phi", true, "run trivial phi removal optimization")
-	flags.BoolVar(&opts.uselessElim, "useless-elim", true, "run useless code elimination optimization")
+	flags.StringVar(&opts.outputFile, "o", "",
+		"output to `filename`")
+	flags.BoolVar(&opts.stackIr, "stack", false,
+		"use a stack-based intermediate representation")
+	flags.BoolVar(&opts.llvm, "llvm", true,
+		"output the LLVM intermediate representation")
+	flags.BoolVar(&opts.graph, "graph", false,
+		"output an IR control flow graph in the dot language")
+	flags.BoolVar(&opts.defUse, "def-use", false,
+		"output def-use chains for each IR function")
+	flags.BoolVar(&opts.constProp, "const-prop", true,
+		"run constant propagation optimization")
+	flags.BoolVar(&opts.trivialPhi, "trivial-phi", true,
+		"run trivial phi removal optimization")
+	flags.BoolVar(&opts.uselessElim, "useless-elim", true,
+		"run useless code elimination optimization")
 
 	// Parse flags
 	err := flags.Parse(os.Args[1:])
