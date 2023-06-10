@@ -141,7 +141,7 @@ func parseArgs() (opts Options, args []string) {
 		"output to `filename`")
 	flags.BoolVar(&opts.stackIr, "stack", false,
 		"use a stack-based intermediate representation")
-	flags.BoolVar(&opts.llvm, "llvm", true,
+	flags.BoolVar(&opts.llvm, "llvm", false,
 		"output the LLVM intermediate representation")
 	flags.BoolVar(&opts.graph, "graph", false,
 		"output an IR control flow graph in the dot language")

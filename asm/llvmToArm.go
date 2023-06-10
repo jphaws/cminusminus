@@ -5,11 +5,17 @@ import (
 	"strconv"
 
 	"github.com/keen-cp/compiler-project-c/ir"
+	"github.com/keen-cp/compiler-project-c/util"
 )
 
 const (
-	paramOffsetInit = 16
-	localOffsetInit = 0
+	dataSize = 8
+
+	paramOffset  = 16 // Offset from fp
+	calleeOffset = 0  // Offset from fp
+	localOffset  = 0  // Offset from sp
+
+	maxRegisterParams = 8
 
 	arithImmediateMin = -4096
 	arithImmediateMax = 4096
@@ -17,36 +23,52 @@ const (
 	movImmediateMax   = 65536
 )
 
-var regNum = 0
+var tmpNum = 0
 
 type functionInfo struct {
-	epiBlock     *Block
-	paramOffset  int
-	localOffset  int
-	calleeOffset int
-	spillOffset  int
-	blocks       map[string]*Block
-	registers    map[string]*Register
+	epiBlock    *Block
+	blocks      map[string]*Block
+	registers   map[string]*Register
+	stackVars   map[string]StackOffset
+	spillOffset int
+}
+
+type StackOffset struct {
+	Base   *Register
+	Offset int
 }
 
 func processFunction(fn *ir.Function, name string, ch chan *Function) {
 	info := &functionInfo{
-		paramOffset: paramOffsetInit,
-		localOffset: localOffsetInit,
-		registers:   map[string]*Register{},
+		blocks:    map[string]*Block{},
+		registers: map[string]*Register{},
+		stackVars: map[string]StackOffset{},
 	}
 
-	visited := map[string]*Block{}
-	blocks := processBlock(fn.Cfg, info, visited)
+	// Pre-populate register and stack maps with parameters
+	populateParams(fn.Parameters, info)
 
+	// Pre-populate stack map with local stack variables
+	populateLocals(fn.Cfg.Allocs, info)
+
+	// TODO: Remove me
+	fmt.Printf("registers: %v\n", info.registers)
+	fmt.Printf("stackVars: %v\n", info.stackVars)
+
+	// Process all CFG blocks
+	blocks := processBlock(fn.Cfg, info)
+
+	// Create prologue block
 	proBlock := &Block{
 		Label:  name,
 		Instrs: createPrologue(info),
 	}
 
+	// Add epilogue instructions to return block
 	epiBlock := info.epiBlock
 	epiBlock.Instrs = append(epiBlock.Instrs, createEpilogue(info)...)
 
+	// Create function wrapper
 	ret := &Function{
 		Blocks: []*Block{proBlock},
 	}
@@ -55,27 +77,68 @@ func processFunction(fn *ir.Function, name string, ch chan *Function) {
 	ch <- ret
 }
 
-func processBlock(b *ir.Block, info *functionInfo, visited map[string]*Block) []*Block {
+func populateParams(params []*ir.Register, info *functionInfo) {
+	numReg := util.Min(len(params), maxRegisterParams)
+
+	// Partition register parameters (x0-x7) vs. stack parameters
+	regParams := params[:numReg]
+	stackParams := params[numReg:]
+
+	// Create name->register mappings for register parameters
+	for i, v := range regParams {
+		info.registers[v.Name] = &Register{
+			Name:    fmt.Sprintf("x%v", i),
+			Virtual: false,
+		}
+	}
+
+	// Create name->offset mappings for stack parameters
+	for i, v := range stackParams {
+		info.stackVars[v.Name] = StackOffset{
+			Base:   findRegister("fp", false, info),
+			Offset: paramOffset + i*dataSize,
+		}
+	}
+}
+
+func populateLocals(allocs []*ir.AllocInstr, info *functionInfo) {
+	// Create name->offset mappings for stack locals
+	for i, v := range allocs {
+		info.stackVars[v.Target.Name] = StackOffset{
+			Base:   findRegister("sp", false, info),
+			Offset: localOffset + i*dataSize,
+		}
+	}
+
+	// Set spill offset to top of local section
+	info.spillOffset = len(allocs) * dataSize
+}
+
+func processBlock(b *ir.Block, info *functionInfo) []*Block {
+	// Create new ASM block and add to the block list
 	curr := &Block{
 		Label: "." + b.Label(),
 	}
-	visited[curr.Label] = curr
+	info.blocks[curr.Label] = curr
 
+	// Translate all LLVM instructions to ARM
 	for _, v := range b.Instrs {
 		curr.Instrs = append(curr.Instrs, instrToArm(v, curr, info)...)
 	}
 
 	ret := []*Block{curr}
 
+	// Process next block (if it exists)
 	if b.Next != nil {
-		if _, ok := visited["."+b.Next.Label()]; !ok {
-			ret = append(ret, processBlock(b.Next, info, visited)...)
+		if _, ok := info.blocks["."+b.Next.Label()]; !ok {
+			ret = append(ret, processBlock(b.Next, info)...)
 		}
 	}
 
+	// Process else block (if it exists)
 	if b.Els != nil {
-		if _, ok := visited["."+b.Els.Label()]; !ok {
-			ret = append(ret, processBlock(b.Els, info, visited)...)
+		if _, ok := info.blocks["."+b.Els.Label()]; !ok {
+			ret = append(ret, processBlock(b.Els, info)...)
 		}
 	}
 
@@ -90,21 +153,15 @@ func instrToArm(instr ir.Instr, curr *Block, info *functionInfo) []Instr {
 		return nil
 	case *ir.StoreInstr:
 		return nil
-	case *ir.GepInstr:
-		return nil
 	case *ir.CallInstr:
 		return nil
 	case *ir.RetInstr:
 		info.epiBlock = curr
 		return retInstrToArm(v, info)
-	case *ir.CompInstr:
-		return nil
 	case *ir.BranchInstr:
 		return nil
 	case *ir.BinaryInstr:
-		return nil
-	case *ir.ConvInstr:
-		return nil
+		return binaryInstrToArm(v, info)
 	case *ir.PhiInstr:
 		return nil
 	}
@@ -113,69 +170,142 @@ func instrToArm(instr ir.Instr, curr *Block, info *functionInfo) []Instr {
 }
 
 func retInstrToArm(ret *ir.RetInstr, info *functionInfo) []Instr {
+	// Ignore void returns
 	if ret.Src == nil {
 		return nil
 	}
 
-	dst := createRegister("x0", false, info.registers)
+	// Create return register (x0)
+	dst := findRegister("x0", false, info)
 
-	var instr Instr
+	var instrs []Instr
 
+	// Move register or immediate into x0
 	switch v := ret.Src.(type) {
 	case *ir.Register:
-		instr = &MovInstr{
-			Dst: dst,
-			Src: createRegister(v.Name, true, info.registers),
-		}
-		addUses(instr)
+		instrs, _ = movLoadRegister(dst, v.Name, true, info)
 
 	case *ir.Literal:
-		instr = movLoadImmediate(dst, v.Value, info)
+		instrs, _ = movLoadImmediate(dst, v.Value, info)
 	}
 
-	return []Instr{instr}
+	return instrs
 }
 
-// func valueToAsm(val ir.Value, dst *Register,
-// 	immType ImmediateType, info *functionInfo) (instr Instr, op Operand) {
+func binaryInstrToArm(bin *ir.BinaryInstr, info *functionInfo) []Instr {
+	instrs := []Instr{}
 
-// 	switch v := val.(type) {
-// 	case *ir.Register:
-// 		op = createRegister(v.Name, true, info.registers)
+	// Set destination register
+	dst := findRegister(bin.Target.Name, true, info)
 
-// 	case *ir.Literal:
-// 		switch immType {
-// 		case BoolImmediateType:
-// 			op = boolImmediate(v.Value, info)
+	op1 := bin.Op1
+	op2 := bin.Op2
 
-// 		case ArithImmediateType:
-// 			instr, op = arithImmediate(v.Value, info)
+	// Flip operands to put an immediate second (for commutative operations)
+	switch bin.Operator {
+	case ir.AddOperator, ir.MulOperator, ir.AndOperator, ir.OrOperator, ir.XorOperator:
+		if _, ok := op1.(*ir.Literal); ok {
+			op1 = bin.Op2
+			op2 = bin.Op1
+		}
+	}
 
-// 		case MovLoadImmediateType:
-// 			instr = movLoadImmediate(v.Value, dst, info)
-// 		}
-// 	}
+	// Handle first operand (always move or load immediates)
+	var src1 *Register
+	switch v := op1.(type) {
+	case *ir.Register:
+		src1 = findRegister(v.Name, true, info)
 
-// 	return
-// }
+	case *ir.Literal:
+		var movInstrs []Instr
+		movInstrs, src1 = zeroMovLoadImmediate(nil, v.Value, info)
+		instrs = append(instrs, movInstrs...)
+	}
 
-// type ImmediateType int
+	// Handle second operand
+	var src2 Operand
+	switch v := op2.(type) {
+	case *ir.Register:
+		src2 = findRegister(v.Name, true, info)
 
-// const (
-// 	BoolImmediateType ImmediateType = iota
-// 	ArithImmediateType
-// 	MovLoadImmediateType
-// )
+		// Handle immediates on a per-operation basis
+	case *ir.Literal:
+		var setInstrs []Instr
+
+		switch bin.Operator {
+		case ir.AddOperator, ir.SubOperator:
+			// Add/sub instructions can take an immediate
+			setInstrs, src2 = arithImmediate(v.Value, info)
+
+		case ir.MulOperator, ir.DivOperator:
+			// Mul/div instructions must use two registers
+			setInstrs, src2 = movLoadImmediate(nil, v.Value, info)
+
+		case ir.AndOperator, ir.OrOperator, ir.XorOperator:
+			// Logical instructions can take an immediate, but not "0" (so use xzr instead)
+			src2 = boolImmediate(v.Value, info)
+		}
+
+		instrs = append(instrs, setInstrs...)
+	}
+
+	// Create arithmetic instruction
+	arith := &ArithInstr{
+		Operator: operatorToArm(bin.Operator),
+		Dst:      dst,
+		Src1:     src1,
+		Src2:     src2,
+	}
+	addUses(arith)
+	instrs = append(instrs, arith)
+
+	return instrs
+}
+
+func movLoadRegister(dst *Register, name string,
+	virtual bool, info *functionInfo) (instrs []Instr, reg *Register) {
+
+	// Use a new temporary register if a destination is not given
+	if dst == nil {
+		dst = nextTempReg(info.registers)
+	}
+	reg = dst
+
+	// Check for an existing stack variable
+	if v, ok := info.stackVars[name]; ok {
+		// If one is found, load it into register
+		load := &LoadInstr{
+			Dst:    dst,
+			Base:   v.Base,
+			Offset: v.Offset,
+		}
+		addUses(load)
+		instrs = []Instr{load}
+
+		return
+	}
+
+	// Otherwise, move from src to dst
+	mov := &MovInstr{
+		Dst: dst,
+		Src: findRegister(name, virtual, info),
+	}
+	addUses(mov)
+	instrs = []Instr{mov}
+
+	return
+}
 
 func boolImmediate(val string, info *functionInfo) Operand {
+	// Use zero register for "0", or an immediate otherwise
 	if val == "0" {
-		return createRegister("xzr", false, info.registers)
+		return findRegister("xzr", false, info)
 	} else {
 		return &Immediate{val}
 	}
 }
 
-func arithImmediate(val string, info *functionInfo) (instr Instr, imm *Immediate) {
+func arithImmediate(val string, info *functionInfo) (instrs []Instr, op Operand) {
 	var v int
 	var err error
 
@@ -186,24 +316,51 @@ func arithImmediate(val string, info *functionInfo) (instr Instr, imm *Immediate
 		v, err = strconv.Atoi(val)
 	}
 
-	// Check if an arithmetic instruction can fit the immediate (<= 12 bits, generally)
-	if err == nil && v >= arithImmediateMin && v <= arithImmediateMax {
-		imm = &Immediate{val}
+	// Use zero register instead of zero immediate
+	if err == nil && v == 0 {
+		op = findRegister("xzr", false, info)
 		return
 	}
 
-	instr = movLoadImmediate(nil, val, info)
+	// Check if an arithmetic instruction can fit the immediate (<= 12 bits, generally)
+	if err == nil && v >= arithImmediateMin && v <= arithImmediateMax {
+		op = &Immediate{val}
+		return
+	}
+
+	instrs, op = movLoadImmediate(nil, val, info)
 	return
 }
 
-func movLoadImmediate(dst *Register, val string, info *functionInfo) Instr {
+func zeroMovLoadImmediate(dst *Register, val string, info *functionInfo) (instrs []Instr, reg *Register) {
+	var v int
+	var err error
+
+	// Convert value to an integer
+	if val == "null" {
+		v = 0
+	} else {
+		v, err = strconv.Atoi(val)
+	}
+
+	// Use zero register instead of zero immediate
+	if err == nil && v == 0 {
+		reg = findRegister("xzr", false, info)
+		return
+	}
+
+	instrs, reg = movLoadImmediate(nil, val, info)
+	return
+}
+
+func movLoadImmediate(dst *Register, val string, info *functionInfo) (instrs []Instr, reg *Register) {
 	// Use a new temporary register if a destination is not given
 	if dst == nil {
 		dst = nextTempReg(info.registers)
 	}
+	reg = dst
 
 	v, err := strconv.Atoi(val)
-	fmt.Println(err)
 
 	// Check if a mov instruction can fit the immediate (<= 16 bits, generally)
 	if err == nil && v >= movImmediateMin && v <= movImmediateMax {
@@ -212,8 +369,9 @@ func movLoadImmediate(dst *Register, val string, info *functionInfo) Instr {
 			Src: &Immediate{val},
 		}
 		addUses(mov)
+		instrs = []Instr{mov}
 
-		return mov
+		return
 	}
 
 	// Otherwise, use a load immediate pseudo-instruction
@@ -222,23 +380,24 @@ func movLoadImmediate(dst *Register, val string, info *functionInfo) Instr {
 		Imm: &Immediate{val},
 	}
 	addUses(load)
+	instrs = []Instr{load}
 
-	return load
+	return
 }
 
 func createPrologue(info *functionInfo) []Instr {
 	store := &StorePairInstr{
-		Src1:      createRegister("fp", false, info.registers),
-		Src2:      createRegister("lr", false, info.registers),
-		Base:      createRegister("sp", false, info.registers),
-		Offset:    Offset{Off: -16},
+		Src1:      findRegister("fp", false, info),
+		Src2:      findRegister("lr", false, info),
+		Base:      findRegister("sp", false, info),
+		Offset:    -16,
 		Increment: PreIncrement,
 	}
 	addUses(store)
 
 	mov := &MovInstr{
-		Dst: createRegister("fp", false, info.registers),
-		Src: createRegister("sp", false, info.registers),
+		Dst: findRegister("fp", false, info),
+		Src: findRegister("sp", false, info),
 	}
 	addUses(mov)
 
@@ -247,16 +406,16 @@ func createPrologue(info *functionInfo) []Instr {
 
 func createEpilogue(info *functionInfo) []Instr {
 	mov := &MovInstr{
-		Dst: createRegister("sp", false, info.registers),
-		Src: createRegister("fp", false, info.registers),
+		Dst: findRegister("sp", false, info),
+		Src: findRegister("fp", false, info),
 	}
 	addUses(mov)
 
 	load := &LoadPairInstr{
-		Dst1:      createRegister("fp", false, info.registers),
-		Dst2:      createRegister("lr", false, info.registers),
-		Base:      createRegister("sp", false, info.registers),
-		Offset:    Offset{Off: 16},
+		Dst1:      findRegister("fp", false, info),
+		Dst2:      findRegister("lr", false, info),
+		Base:      findRegister("sp", false, info),
+		Offset:    16,
 		Increment: PostIncrement,
 	}
 	addUses(load)
@@ -266,16 +425,18 @@ func createEpilogue(info *functionInfo) []Instr {
 	return []Instr{load, mov, ret}
 }
 
-func createRegister(name string, virtual bool, table map[string]*Register) *Register {
-	if v, ok := table[name]; ok {
+func findRegister(name string, virtual bool, info *functionInfo) *Register {
+	// Check for an existing register and return it
+	if v, ok := info.registers[name]; ok {
 		return v
 	}
 
+	// Create a new register if needed, and add it to the existing register table
 	reg := &Register{
 		Name:    name,
 		Virtual: virtual,
 	}
-	table[name] = reg
+	info.registers[name] = reg
 
 	return reg
 }
@@ -295,13 +456,34 @@ func addUses(instr Instr) {
 }
 
 func nextTempReg(table map[string]*Register) *Register {
-	regNum++
+	tmpNum++
 
 	reg := &Register{
-		Name:    fmt.Sprintf("_tmp%v", regNum),
+		Name:    fmt.Sprintf("_tmp%v", tmpNum),
 		Virtual: true,
 	}
 
 	table[reg.Name] = reg
 	return reg
+}
+
+func operatorToArm(op ir.Operator) Operator {
+	switch op {
+	case ir.AddOperator:
+		return AddOperator
+	case ir.SubOperator:
+		return SubOperator
+	case ir.MulOperator:
+		return MulOperator
+	case ir.DivOperator:
+		return DivOperator
+	case ir.AndOperator:
+		return AndOperator
+	case ir.OrOperator:
+		return OrOperator
+	case ir.XorOperator:
+		return XorOperator
+	}
+
+	panic("Unsupported operator")
 }

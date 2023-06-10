@@ -37,7 +37,7 @@ func (m MovInstr) String() string {
 type LoadInstr struct {
 	Dst       *Register
 	Base      *Register
-	Offset    Offset
+	Offset    int
 	Increment Increment
 }
 
@@ -50,18 +50,16 @@ func (l LoadInstr) getSrcs() []Operand {
 }
 
 func (l LoadInstr) String() string {
-	offset := l.Offset.Calculate()
-
 	var offStr, postStr string
-	if offset != 0 {
+	if l.Offset != 0 {
 		switch l.Increment {
 		case PostIncrement:
-			postStr = fmt.Sprintf(", %v", offset)
+			postStr = fmt.Sprintf(", %v", l.Offset)
 		case PreIncrement:
 			postStr = "!"
 			fallthrough
 		case NoIncrement:
-			offStr = fmt.Sprintf(", %v", offset)
+			offStr = fmt.Sprintf(", %v", l.Offset)
 		}
 	}
 
@@ -89,7 +87,7 @@ type LoadPairInstr struct {
 	Dst1      *Register
 	Dst2      *Register
 	Base      *Register
-	Offset    Offset
+	Offset    int
 	Increment Increment
 }
 
@@ -102,18 +100,16 @@ func (l LoadPairInstr) getSrcs() []Operand {
 }
 
 func (l LoadPairInstr) String() string {
-	offset := l.Offset.Calculate()
-
 	var offStr, postStr string
-	if offset != 0 {
+	if l.Offset != 0 {
 		switch l.Increment {
 		case PostIncrement:
-			postStr = fmt.Sprintf(", %v", offset)
+			postStr = fmt.Sprintf(", %v", l.Offset)
 		case PreIncrement:
 			postStr = "!"
 			fallthrough
 		case NoIncrement:
-			offStr = fmt.Sprintf(", %v", offset)
+			offStr = fmt.Sprintf(", %v", l.Offset)
 		}
 	}
 
@@ -123,7 +119,7 @@ func (l LoadPairInstr) String() string {
 type StoreInstr struct {
 	Src       *Register
 	Base      *Register
-	Offset    Offset
+	Offset    int
 	Increment Increment
 }
 
@@ -136,18 +132,16 @@ func (s StoreInstr) getSrcs() []Operand {
 }
 
 func (s StoreInstr) String() string {
-	offset := s.Offset.Calculate()
-
 	var offStr, postStr string
-	if offset != 0 {
+	if s.Offset != 0 {
 		switch s.Increment {
 		case PostIncrement:
-			postStr = fmt.Sprintf(", %v", offset)
+			postStr = fmt.Sprintf(", %v", s.Offset)
 		case PreIncrement:
 			postStr = "!"
 			fallthrough
 		case NoIncrement:
-			offStr = fmt.Sprintf(", %v", offset)
+			offStr = fmt.Sprintf(", %v", s.Offset)
 		}
 	}
 
@@ -158,7 +152,7 @@ type StorePairInstr struct {
 	Src1      *Register
 	Src2      *Register
 	Base      Operand
-	Offset    Offset
+	Offset    int
 	Increment Increment
 }
 
@@ -171,22 +165,39 @@ func (s StorePairInstr) getSrcs() []Operand {
 }
 
 func (s StorePairInstr) String() string {
-	offset := s.Offset.Calculate()
-
 	var offStr, postStr string
-	if offset != 0 {
+	if s.Offset != 0 {
 		switch s.Increment {
 		case PostIncrement:
-			postStr = fmt.Sprintf(", %v", offset)
+			postStr = fmt.Sprintf(", %v", s.Offset)
 		case PreIncrement:
 			postStr = "!"
 			fallthrough
 		case NoIncrement:
-			offStr = fmt.Sprintf(", %v", offset)
+			offStr = fmt.Sprintf(", %v", s.Offset)
 		}
 	}
 
 	return fmt.Sprintf("stp %v, %v, [%v%v]%v", s.Src1, s.Src2, s.Base, offStr, postStr)
+}
+
+type ArithInstr struct {
+	Operator Operator
+	Dst      *Register
+	Src1     *Register
+	Src2     Operand
+}
+
+func (a ArithInstr) getDsts() []*Register {
+	return []*Register{a.Dst}
+}
+
+func (a ArithInstr) getSrcs() []Operand {
+	return []Operand{a.Src1, a.Src2}
+}
+
+func (a ArithInstr) String() string {
+	return fmt.Sprintf("%v %v, %v, %v", a.Operator, a.Dst, a.Src1, a.Src2)
 }
 
 type RetInstr struct{}
@@ -201,6 +212,23 @@ func (m RetInstr) getSrcs() []Operand {
 
 func (m RetInstr) String() string {
 	return "ret"
+}
+
+// === Operators ===
+type Operator string
+
+const (
+	AddOperator Operator = "add"
+	SubOperator Operator = "sub"
+	MulOperator Operator = "mul"
+	DivOperator Operator = "sdiv"
+	AndOperator Operator = "and"
+	OrOperator  Operator = "orr"
+	XorOperator Operator = "eor"
+)
+
+func (o Operator) String() string {
+	return string(o)
 }
 
 // === Operand ===
@@ -228,24 +256,6 @@ func (i Immediate) operandFunc() {}
 
 func (i Immediate) String() string {
 	return i.Value
-}
-
-// === Offset ===
-// Calculated offsets are *SectionOff + Off. The section offset can be to point to an unknown
-// offset which will be finalized later.
-// For example, the section offset could be the offset from fp to the spill frame section.
-type Offset struct {
-	SectionOff *int
-	Off        int
-}
-
-func (o Offset) Calculate() int {
-	frameOffset := 0
-	if o.SectionOff != nil {
-		frameOffset = *o.SectionOff
-	}
-
-	return frameOffset + o.Off
 }
 
 // === Increment ===
