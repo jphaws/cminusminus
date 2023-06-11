@@ -438,6 +438,11 @@ func (l Literal) ToBool() bool {
 }
 
 func (l Literal) ToInt() (val int, err error) {
+	if l.Value == "null" {
+		val = 0
+		return
+	}
+
 	return strconv.Atoi(l.Value)
 }
 

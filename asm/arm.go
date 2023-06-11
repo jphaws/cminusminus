@@ -35,10 +35,11 @@ func (m MovInstr) String() string {
 }
 
 type LoadInstr struct {
-	Dst       *Register
-	Base      *Register
-	Offset    int
-	Increment Increment
+	Dst        *Register
+	Base       *Register
+	Offset     int
+	PageOffset string
+	Increment  Increment
 }
 
 func (l LoadInstr) getDsts() []*Register {
@@ -51,7 +52,10 @@ func (l LoadInstr) getSrcs() []Operand {
 
 func (l LoadInstr) String() string {
 	var offStr, postStr string
-	if l.Offset != 0 {
+	if l.PageOffset != "" {
+		offStr = fmt.Sprintf(", #:lo12:%v", l.PageOffset)
+
+	} else if l.Offset != 0 {
 		switch l.Increment {
 		case PostIncrement:
 			postStr = fmt.Sprintf(", %v", l.Offset)
@@ -117,10 +121,11 @@ func (l LoadPairInstr) String() string {
 }
 
 type StoreInstr struct {
-	Src       *Register
-	Base      *Register
-	Offset    int
-	Increment Increment
+	Src        *Register
+	Base       *Register
+	Offset     int
+	PageOffset string
+	Increment  Increment
 }
 
 func (s StoreInstr) getDsts() []*Register {
@@ -133,7 +138,10 @@ func (s StoreInstr) getSrcs() []Operand {
 
 func (s StoreInstr) String() string {
 	var offStr, postStr string
-	if s.Offset != 0 {
+	if s.PageOffset != "" {
+		offStr = fmt.Sprintf(", #:lo12:%v", s.PageOffset)
+
+	} else if s.Offset != 0 {
 		switch s.Increment {
 		case PostIncrement:
 			postStr = fmt.Sprintf(", %v", s.Offset)
@@ -145,7 +153,7 @@ func (s StoreInstr) String() string {
 		}
 	}
 
-	return fmt.Sprintf("ldr %v, [%v%v]%v", s.Src, s.Base, offStr, postStr)
+	return fmt.Sprintf("str %v, [%v%v]%v", s.Src, s.Base, offStr, postStr)
 }
 
 type StorePairInstr struct {
@@ -179,6 +187,23 @@ func (s StorePairInstr) String() string {
 	}
 
 	return fmt.Sprintf("stp %v, %v, [%v%v]%v", s.Src1, s.Src2, s.Base, offStr, postStr)
+}
+
+type PageAddressInstr struct {
+	Dst   *Register
+	Label string
+}
+
+func (p PageAddressInstr) getDsts() []*Register {
+	return []*Register{p.Dst}
+}
+
+func (p PageAddressInstr) getSrcs() []Operand {
+	return nil
+}
+
+func (p PageAddressInstr) String() string {
+	return fmt.Sprintf("adrp %v, %v", p.Dst, p.Label)
 }
 
 type ArithInstr struct {

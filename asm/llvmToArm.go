@@ -2,7 +2,6 @@ package asm
 
 import (
 	"fmt"
-	"strconv"
 
 	"github.com/keen-cp/compiler-project-c/ir"
 	"github.com/keen-cp/compiler-project-c/util"
@@ -147,12 +146,10 @@ func processBlock(b *ir.Block, info *functionInfo) []*Block {
 
 func instrToArm(instr ir.Instr, curr *Block, info *functionInfo) []Instr {
 	switch v := instr.(type) {
-	case *ir.AllocInstr:
-		return nil
 	case *ir.LoadInstr:
-		return nil
+		return loadInstrToArm(v, info)
 	case *ir.StoreInstr:
-		return nil
+		return storeInstrToArm(v, info)
 	case *ir.CallInstr:
 		return nil
 	case *ir.RetInstr:
@@ -167,6 +164,157 @@ func instrToArm(instr ir.Instr, curr *Block, info *functionInfo) []Instr {
 	}
 
 	return nil
+}
+
+func loadInstrToArm(ld *ir.LoadInstr, info *functionInfo) []Instr {
+	dst := findRegister(ld.Reg.Name, true, info)
+
+	// Check if the load is from a global
+	if glob, ok := ld.Mem.(*ir.Register); ok && glob.Global {
+		return loadGlobalToArm(dst, glob, info)
+	}
+
+	var instrs []Instr
+	var base *Register
+	var offset int
+
+	// Find base register and offset for load
+	switch v := ld.Mem.(type) {
+	case *ir.Literal:
+		// For immediates, mov/load a new base register and use 0 offset
+		instrs, base = movLoadImmediate(nil, v, info)
+		offset = 0
+
+	case *ir.Register:
+		// For registers, look for a GepInstr to check for its base and offset
+		var baseInstrs []Instr
+		baseInstrs, base, offset = getLoadStoreBase(v, info)
+		instrs = append(instrs, baseInstrs...)
+	}
+
+	// Create load instruction
+	load := &LoadInstr{
+		Dst:    dst,
+		Base:   base,
+		Offset: offset,
+	}
+	addUses(load)
+
+	return append(instrs, load)
+}
+
+func loadGlobalToArm(dst *Register, glob *ir.Register, info *functionInfo) []Instr {
+	// Create temporary base register to hold page address
+	base := nextTempReg(info.registers)
+
+	// Get page aligned-address of global
+	adrp := &PageAddressInstr{
+		Dst:   base,
+		Label: "$" + glob.Name,
+	}
+	addUses(adrp)
+
+	// Load global using page offset
+	load := &LoadInstr{
+		Dst:        dst,
+		Base:       base,
+		PageOffset: glob.Name,
+	}
+	addUses(load)
+
+	return []Instr{adrp, load}
+}
+
+func storeInstrToArm(st *ir.StoreInstr, info *functionInfo) []Instr {
+	var instrs []Instr
+	var src *Register
+
+	// Set source for the store depending on register vs. literal
+	switch v := st.Reg.(type) {
+	case *ir.Register:
+		instrs, src = useLoadRegister(v.Name, info)
+
+	case *ir.Literal:
+		instrs, src = movLoadImmediate(nil, v, info)
+	}
+
+	// Check if the store is to a global
+	if glob, ok := st.Mem.(*ir.Register); ok && glob.Global {
+		globInstrs := storeGlobalToArm(src, glob, info)
+		return append(instrs, globInstrs...)
+	}
+
+	var base *Register
+	var offset int
+
+	// Find base register and offset for store
+	switch v := st.Mem.(type) {
+	case *ir.Literal:
+		// For immediates, mov/load a new base register and use 0 offset
+		var baseInstrs []Instr
+		baseInstrs, base = movLoadImmediate(nil, v, info)
+		instrs = append(instrs, baseInstrs...)
+
+		offset = 0
+
+	case *ir.Register:
+		// For registers, look for a GepInstr to check for its base and offset
+		var baseInstrs []Instr
+		baseInstrs, base, offset = getLoadStoreBase(v, info)
+		instrs = append(instrs, baseInstrs...)
+	}
+
+	// Create load instruction
+	store := &StoreInstr{
+		Src:    src,
+		Base:   base,
+		Offset: offset,
+	}
+	addUses(store)
+
+	return append(instrs, store)
+}
+
+func storeGlobalToArm(src *Register, glob *ir.Register, info *functionInfo) []Instr {
+	// Create temporary base register to hold page address
+	base := nextTempReg(info.registers)
+
+	// Get page aligned-address of global
+	adrp := &PageAddressInstr{
+		Dst:   base,
+		Label: "$" + glob.Name,
+	}
+	addUses(adrp)
+
+	// Load global using page offset
+	store := &StoreInstr{
+		Src:        src,
+		Base:       base,
+		PageOffset: glob.Name,
+	}
+	addUses(store)
+
+	return []Instr{adrp, store}
+}
+
+func getLoadStoreBase(reg *ir.Register, info *functionInfo) (instrs []Instr, base *Register, offset int) {
+	gep := reg.Def.(*ir.GepInstr)
+
+	// Use GepInstr base as the base of this load/store
+	switch v := gep.Base.(type) {
+	case *ir.Literal:
+		// If the GepInstr base is a literal, mov/load that value as the base
+		instrs, base = movLoadImmediate(nil, v, info)
+
+	case *ir.Register:
+		// Otherwise, use/load a register for the base
+		instrs, base = useLoadRegister(v.Name, info)
+	}
+
+	// Use GepInstr index to calculate offset
+	offset = gep.Index * dataSize
+
+	return
 }
 
 func retInstrToArm(ret *ir.RetInstr, info *functionInfo) []Instr {
@@ -186,7 +334,7 @@ func retInstrToArm(ret *ir.RetInstr, info *functionInfo) []Instr {
 		instrs, _ = movLoadRegister(dst, v.Name, true, info)
 
 	case *ir.Literal:
-		instrs, _ = movLoadImmediate(dst, v.Value, info)
+		instrs, _ = movLoadImmediate(dst, v, info)
 	}
 
 	return instrs
@@ -218,7 +366,7 @@ func binaryInstrToArm(bin *ir.BinaryInstr, info *functionInfo) []Instr {
 
 	case *ir.Literal:
 		var movInstrs []Instr
-		movInstrs, src1 = zeroMovLoadImmediate(nil, v.Value, info)
+		movInstrs, src1 = zeroMovLoadImmediate(nil, v, info)
 		instrs = append(instrs, movInstrs...)
 	}
 
@@ -235,15 +383,15 @@ func binaryInstrToArm(bin *ir.BinaryInstr, info *functionInfo) []Instr {
 		switch bin.Operator {
 		case ir.AddOperator, ir.SubOperator:
 			// Add/sub instructions can take an immediate
-			setInstrs, src2 = arithImmediate(v.Value, info)
+			setInstrs, src2 = arithImmediate(v, info)
 
 		case ir.MulOperator, ir.DivOperator:
 			// Mul/div instructions must use two registers
-			setInstrs, src2 = movLoadImmediate(nil, v.Value, info)
+			setInstrs, src2 = movLoadImmediate(nil, v, info)
 
 		case ir.AndOperator, ir.OrOperator, ir.XorOperator:
 			// Logical instructions can take an immediate, but not "0" (so use xzr instead)
-			src2 = boolImmediate(v.Value, info)
+			src2 = boolImmediate(v, info)
 		}
 
 		instrs = append(instrs, setInstrs...)
@@ -260,6 +408,29 @@ func binaryInstrToArm(bin *ir.BinaryInstr, info *functionInfo) []Instr {
 	instrs = append(instrs, arith)
 
 	return instrs
+}
+
+func useLoadRegister(name string, info *functionInfo) (instrs []Instr, reg *Register) {
+	// Check for an existing stack variable
+	if v, present := info.stackVars[name]; present {
+		reg = nextTempReg(info.registers)
+
+		// Load the stack variable into a new temporary register
+		load := &LoadInstr{
+			Dst:    reg,
+			Base:   v.Base,
+			Offset: v.Offset,
+		}
+		addUses(load)
+
+		instrs = []Instr{load}
+
+	} else {
+		// Otherwise, use a register
+		reg = findRegister(name, true, info)
+	}
+
+	return
 }
 
 func movLoadRegister(dst *Register, name string,
@@ -296,77 +467,70 @@ func movLoadRegister(dst *Register, name string,
 	return
 }
 
-func boolImmediate(val string, info *functionInfo) Operand {
-	// Use zero register for "0", or an immediate otherwise
-	if val == "0" {
-		return findRegister("xzr", false, info)
+func boolImmediate(lit *ir.Literal, info *functionInfo) Operand {
+	// Use zero register for false, or an immediate otherwise
+	if lit.ToBool() {
+		return &Immediate{"1"}
 	} else {
-		return &Immediate{val}
+		return findRegister("xzr", false, info)
 	}
 }
 
-func arithImmediate(val string, info *functionInfo) (instrs []Instr, op Operand) {
-	var v int
-	var err error
-
-	// Convert value to an integer
-	if val == "null" {
-		v = 0
-	} else {
-		v, err = strconv.Atoi(val)
-	}
+func arithImmediate(lit *ir.Literal, info *functionInfo) (instrs []Instr, op Operand) {
+	val, err := lit.ToInt()
 
 	// Use zero register instead of zero immediate
-	if err == nil && v == 0 {
+	if err == nil && val == 0 {
 		op = findRegister("xzr", false, info)
 		return
 	}
 
 	// Check if an arithmetic instruction can fit the immediate (<= 12 bits, generally)
-	if err == nil && v >= arithImmediateMin && v <= arithImmediateMax {
-		op = &Immediate{val}
+	if err == nil && val >= arithImmediateMin && val <= arithImmediateMax {
+		op = &Immediate{lit.Value}
 		return
 	}
 
-	instrs, op = movLoadImmediate(nil, val, info)
+	instrs, op = movLoadImmediate(nil, lit, info)
 	return
 }
 
-func zeroMovLoadImmediate(dst *Register, val string, info *functionInfo) (instrs []Instr, reg *Register) {
-	var v int
-	var err error
-
+func zeroMovLoadImmediate(dst *Register, lit *ir.Literal, info *functionInfo) (instrs []Instr, reg *Register) {
 	// Convert value to an integer
-	if val == "null" {
-		v = 0
-	} else {
-		v, err = strconv.Atoi(val)
-	}
+	val, err := lit.ToInt()
 
 	// Use zero register instead of zero immediate
-	if err == nil && v == 0 {
+	if err == nil && val == 0 {
 		reg = findRegister("xzr", false, info)
 		return
 	}
 
-	instrs, reg = movLoadImmediate(nil, val, info)
+	instrs, reg = movLoadImmediate(nil, lit, info)
 	return
 }
 
-func movLoadImmediate(dst *Register, val string, info *functionInfo) (instrs []Instr, reg *Register) {
+func movLoadImmediate(dst *Register, lit *ir.Literal, info *functionInfo) (instrs []Instr, reg *Register) {
 	// Use a new temporary register if a destination is not given
 	if dst == nil {
 		dst = nextTempReg(info.registers)
 	}
 	reg = dst
 
-	v, err := strconv.Atoi(val)
+	strVal := lit.Value
+
+	// Convert value to an integer
+	val, err := lit.ToInt()
+
+	// Always use "0" instead of "null"
+	if err == nil && val == 0 {
+		strVal = "0"
+	}
 
 	// Check if a mov instruction can fit the immediate (<= 16 bits, generally)
-	if err == nil && v >= movImmediateMin && v <= movImmediateMax {
+	if err == nil && val >= movImmediateMin && val <= movImmediateMax {
 		mov := &MovInstr{
 			Dst: dst,
-			Src: &Immediate{val},
+			Src: &Immediate{strVal},
 		}
 		addUses(mov)
 		instrs = []Instr{mov}
@@ -377,7 +541,7 @@ func movLoadImmediate(dst *Register, val string, info *functionInfo) (instrs []I
 	// Otherwise, use a load immediate pseudo-instruction
 	load := &LoadImmediateInstr{
 		Dst: dst,
-		Imm: &Immediate{val},
+		Imm: &Immediate{strVal},
 	}
 	addUses(load)
 	instrs = []Instr{load}
