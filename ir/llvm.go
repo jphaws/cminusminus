@@ -97,7 +97,7 @@ func (c CallInstr) String() string {
 	}
 
 	// Create full string output
-	return fmt.Sprintf("%vcall %v%v %v(%v)",
+	return fmt.Sprintf("%vcall %v%v @%v(%v)",
 		target, c.ReturnType, vari, c.FnName, strings.Join(args, ", "))
 }
 

@@ -51,7 +51,7 @@ func printStatementToLlvm(prnt *ast.PrintStatement,
 	}
 
 	call := &CallInstr{
-		FnName:     "@printf",
+		FnName:     "printf",
 		ReturnType: &IntType{32},
 		Arguments: []Value{
 			&Literal{
@@ -73,7 +73,7 @@ func deleteStatementToLlvm(del *ast.DeleteStatement,
 	instrs, reg := expressionToLlvm(del.Expression, curr, locals, false)
 
 	call := &CallInstr{
-		FnName:     "@free",
+		FnName:     "free",
 		ReturnType: &VoidType{},
 		Arguments:  []Value{reg},
 	}
@@ -114,7 +114,7 @@ func readToLlvm(target Value) []Instr {
 	format := "@" + scanStrName
 
 	call := &CallInstr{
-		FnName:     "@scanf",
+		FnName:     "scanf",
 		ReturnType: &IntType{32},
 		Arguments: []Value{
 			&Literal{
@@ -193,7 +193,7 @@ func invocationExpressionToLlvm(inv *ast.InvocationExpression, curr *Block,
 	// Build call instruction
 	call := &CallInstr{
 		Target:     target,
-		FnName:     "@" + inv.Name,
+		FnName:     inv.Name,
 		ReturnType: retType,
 		Arguments:  args,
 	}
@@ -432,7 +432,7 @@ func newExpressionToLlvm(nw *ast.NewExpression, locals map[string]*Register) (in
 
 	malloc := &CallInstr{
 		Target:     reg,
-		FnName:     "@malloc",
+		FnName:     "malloc",
 		ReturnType: reg.GetType(),
 		Arguments: []Value{
 			&Literal{
