@@ -298,7 +298,11 @@ func (r *Register) IsEqual(v Value) bool {
 }
 
 func (r Register) String() string {
-	return r.Name
+	if r.Global {
+		return "@" + r.Name
+	} else {
+		return "%" + r.Name
+	}
 }
 
 type Literal struct {
@@ -431,6 +435,10 @@ func (l *Literal) DoOperation(ol *Literal, op Operator) (ret *Literal, err error
 // Assumes that l is a boolean (has value "0" or "1")
 func (l Literal) ToBool() bool {
 	return l.Value == "1"
+}
+
+func (l Literal) ToInt() (val int, err error) {
+	return strconv.Atoi(l.Value)
 }
 
 func (l Literal) String() string {

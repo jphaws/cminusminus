@@ -133,7 +133,7 @@ func functionToLlvm(name string, fn *Function) string {
 	for _, param := range fn.Parameters {
 		pTyp := param.Type
 		pName := param.Name
-		params = append(params, fmt.Sprintf("%v %v", pTyp, pName))
+		params = append(params, fmt.Sprintf("%v %%%v", pTyp, pName))
 	}
 
 	// Create declaration
@@ -281,7 +281,7 @@ func CreateIr(root *ast.Root, tables *ast.Tables, stack bool) *ProgramIr {
 
 		// Add non-function types to the symbol table
 		symbolTable[k] = &Register{
-			Name:   "@" + k,
+			Name:   k,
 			Type:   &PointerType{typeToLlvm(v)},
 			Global: true,
 		}

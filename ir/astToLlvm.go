@@ -611,7 +611,7 @@ func operatorToLlvm(op ast.Operator) CondOp {
 
 func nextRegName() string {
 	regNum++
-	return fmt.Sprintf("%%_r%v", regNum)
+	return fmt.Sprintf("_r%v", regNum)
 }
 
 func addDefUse(instr Instr) {

@@ -151,7 +151,7 @@ func allocRead(locals map[string]*Register) *Register {
 	// Create read pointer (if it doesn't already exit)
 	if _, ok := locals[readPtrName]; !ok {
 		reg := &Register{
-			Name: "%" + readPtrName,
+			Name: readPtrName,
 			Type: &PointerType{&IntType{64}},
 		}
 		locals[readPtrName] = reg
@@ -228,7 +228,7 @@ func functionInitLlvmReg(fn *ast.Function,
 	for _, v := range fn.Parameters {
 		// Create parameter register
 		reg := &Register{
-			Name: "%" + v.Name,
+			Name: v.Name,
 			Type: typeToLlvm(v.Type),
 		}
 		locals[v.Name] = reg
@@ -240,7 +240,7 @@ func functionInitLlvmReg(fn *ast.Function,
 	// Handle locals
 	for _, v := range fn.Locals {
 		reg := &Register{
-			Name: "%" + v.Name,
+			Name: v.Name,
 			Type: typeToLlvm(v.Type),
 		}
 		locals[v.Name] = reg

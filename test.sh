@@ -13,6 +13,7 @@ EXPECTED_LONGER="output.longer.expected"
 ACTUAL="output.actual"
 ACTUAL_LONGER="output.longer.actual"
 CLEANUP=true
+LLVM=""
 STACK=""
 CONST_PROP=""
 TRIVIAL=""
@@ -68,7 +69,7 @@ compile_benchmark() {
 
    set +e
    # Compile mini source code to LLVM
-   $MC -o $minillvm $STACK $CONST_PROP $TRIVIAL $USELESS $mini 2>> $LOG
+   $MC -o $minillvm $LLVM $STACK $CONST_PROP $TRIVIAL $USELESS $mini 2>> $LOG
    if [ "$?" -ne 0 ]; then
       print_error $1 "mini->llvm compilation failed"
       RET=$((RET + 1))
@@ -158,6 +159,9 @@ if [ "$#" -gt 0 ]; then
             ;;
          '-n' | '--no-cleanup')
             CLEANUP=false
+            ;;
+         '-llvm' | '--llvm')
+            LLVM='--llvm'
             ;;
          '-stack' | '--stack')
             STACK='--stack'

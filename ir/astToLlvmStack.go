@@ -138,14 +138,14 @@ func functionInitLlvmStack(fn *ast.Function, curr *Block) (instrs []Instr,
 	for _, v := range fn.Parameters {
 		// Create parameter register
 		pReg := &Register{
-			Name: "%_p" + v.Name,
+			Name: "_p" + v.Name,
 			Type: typeToLlvm(v.Type),
 		}
 		locals["_p"+v.Name] = pReg
 
 		// Create parameter stack pointer
 		reg := &Register{
-			Name: "%" + v.Name,
+			Name: v.Name,
 			Type: &PointerType{typeToLlvm(v.Type)},
 		}
 		locals[v.Name] = reg
@@ -169,7 +169,7 @@ func functionInitLlvmStack(fn *ast.Function, curr *Block) (instrs []Instr,
 	// Handle locals
 	for _, v := range fn.Locals {
 		reg := &Register{
-			Name: "%" + v.Name,
+			Name: v.Name,
 			Type: &PointerType{typeToLlvm(v.Type)},
 		}
 		locals[v.Name] = reg
@@ -186,7 +186,7 @@ func functionInitLlvmStack(fn *ast.Function, curr *Block) (instrs []Instr,
 	}
 
 	retPtr := &Register{
-		Name: "%" + retPtrName,
+		Name: retPtrName,
 		Type: &PointerType{typeToLlvm(fn.ReturnType)},
 	}
 	locals[retPtrName] = retPtr
@@ -206,7 +206,7 @@ func functionFiniLlvmStack(fn *ast.Function, locals map[string]*Register) []Inst
 	}
 
 	retVal := &Register{
-		Name: "%" + retValName,
+		Name: retValName,
 		Type: typeToLlvm(fn.ReturnType),
 	}
 	locals[retVal.Name] = retVal
