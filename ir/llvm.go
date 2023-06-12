@@ -306,8 +306,9 @@ func (r Register) String() string {
 }
 
 type Literal struct {
-	Value string
-	Type  Type
+	Value  string
+	Global bool
+	Type   Type
 }
 
 func (l Literal) GetType() Type {
@@ -447,7 +448,11 @@ func (l Literal) ToInt() (val int, err error) {
 }
 
 func (l Literal) String() string {
-	return l.Value
+	if l.Global {
+		return "@" + l.Value
+	} else {
+		return l.Value
+	}
 }
 
 // === Types ===

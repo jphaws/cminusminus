@@ -84,7 +84,7 @@ func (l LoadImmediateInstr) getSrcs() []Operand {
 }
 
 func (l LoadImmediateInstr) String() string {
-	return fmt.Sprintf("ldr %v, =%v", l.Dst, l.Imm.Value)
+	return fmt.Sprintf("ldr %v, =%v", l.Dst, l.Imm)
 }
 
 type LoadPairInstr struct {
@@ -225,6 +225,22 @@ func (a ArithInstr) String() string {
 	return fmt.Sprintf("%v %v, %v, %v", a.Operator, a.Dst, a.Src1, a.Src2)
 }
 
+type BranchLinkInstr struct {
+	Label string
+}
+
+func (b BranchLinkInstr) getDsts() []*Register {
+	return nil
+}
+
+func (b BranchLinkInstr) getSrcs() []Operand {
+	return nil
+}
+
+func (b BranchLinkInstr) String() string {
+	return fmt.Sprintf("bl %v", b.Label)
+}
+
 type RetInstr struct{}
 
 func (m RetInstr) getDsts() []*Register {
@@ -274,13 +290,18 @@ func (r Register) String() string {
 }
 
 type Immediate struct {
-	Value string
+	Value  string
+	Global bool
 }
 
 func (i Immediate) operandFunc() {}
 
 func (i Immediate) String() string {
-	return i.Value
+	if i.Global {
+		return "$" + i.Value
+	} else {
+		return i.Value
+	}
 }
 
 // === Increment ===

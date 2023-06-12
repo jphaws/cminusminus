@@ -2,6 +2,7 @@ package asm
 
 import (
 	"fmt"
+	"strconv"
 
 	"github.com/keen-cp/compiler-project-c/ir"
 	"github.com/keen-cp/compiler-project-c/util"
@@ -48,7 +49,10 @@ func processFunction(fn *ir.Function, name string, ch chan *Function) {
 	populateParams(fn.Parameters, info)
 
 	// Pre-populate stack map with local stack variables
-	populateLocals(fn.Cfg.Allocs, info)
+	stackPointerOffset := populateLocals(fn.Cfg.Allocs, info)
+
+	// Set spill offset to top of local section
+	info.spillOffset = stackPointerOffset
 
 	// TODO: Remove me
 	fmt.Printf("registers: %v\n", info.registers)
@@ -57,10 +61,15 @@ func processFunction(fn *ir.Function, name string, ch chan *Function) {
 	// Process all CFG blocks
 	blocks := processBlock(fn.Cfg, info)
 
+	// Rectify stack pointer to a 16-byte boundary
+	if stackPointerOffset%16 != 0 {
+		stackPointerOffset += 8
+	}
+
 	// Create prologue block
 	proBlock := &Block{
 		Label:  name,
-		Instrs: createPrologue(info),
+		Instrs: createPrologue(info, stackPointerOffset),
 	}
 
 	// Add epilogue instructions to return block
@@ -100,7 +109,7 @@ func populateParams(params []*ir.Register, info *functionInfo) {
 	}
 }
 
-func populateLocals(allocs []*ir.AllocInstr, info *functionInfo) {
+func populateLocals(allocs []*ir.AllocInstr, info *functionInfo) int {
 	// Create name->offset mappings for stack locals
 	for i, v := range allocs {
 		info.stackVars[v.Target.Name] = StackOffset{
@@ -109,8 +118,7 @@ func populateLocals(allocs []*ir.AllocInstr, info *functionInfo) {
 		}
 	}
 
-	// Set spill offset to top of local section
-	info.spillOffset = len(allocs) * dataSize
+	return len(allocs) * dataSize
 }
 
 func processBlock(b *ir.Block, info *functionInfo) []*Block {
@@ -151,7 +159,7 @@ func instrToArm(instr ir.Instr, curr *Block, info *functionInfo) []Instr {
 	case *ir.StoreInstr:
 		return storeInstrToArm(v, info)
 	case *ir.CallInstr:
-		return nil
+		return callInstrToArm(v, info)
 	case *ir.RetInstr:
 		info.epiBlock = curr
 		return retInstrToArm(v, info)
@@ -208,9 +216,10 @@ func loadGlobalToArm(dst *Register, glob *ir.Register, info *functionInfo) []Ins
 	base := nextTempReg(info.registers)
 
 	// Get page aligned-address of global
+	label := globals[glob.Name]
 	adrp := &PageAddressInstr{
 		Dst:   base,
-		Label: "$" + glob.Name,
+		Label: label,
 	}
 	addUses(adrp)
 
@@ -218,7 +227,7 @@ func loadGlobalToArm(dst *Register, glob *ir.Register, info *functionInfo) []Ins
 	load := &LoadInstr{
 		Dst:        dst,
 		Base:       base,
-		PageOffset: glob.Name,
+		PageOffset: label,
 	}
 	addUses(load)
 
@@ -280,9 +289,10 @@ func storeGlobalToArm(src *Register, glob *ir.Register, info *functionInfo) []In
 	base := nextTempReg(info.registers)
 
 	// Get page aligned-address of global
+	label := globals[glob.Name]
 	adrp := &PageAddressInstr{
 		Dst:   base,
-		Label: "$" + glob.Name,
+		Label: label,
 	}
 	addUses(adrp)
 
@@ -290,7 +300,7 @@ func storeGlobalToArm(src *Register, glob *ir.Register, info *functionInfo) []In
 	store := &StoreInstr{
 		Src:        src,
 		Base:       base,
-		PageOffset: glob.Name,
+		PageOffset: label,
 	}
 	addUses(store)
 
@@ -298,21 +308,167 @@ func storeGlobalToArm(src *Register, glob *ir.Register, info *functionInfo) []In
 }
 
 func getLoadStoreBase(reg *ir.Register, info *functionInfo) (instrs []Instr, base *Register, offset int) {
-	gep := reg.Def.(*ir.GepInstr)
+	switch v := reg.Def.(type) {
+	case *ir.GepInstr:
+		// Use GepInstr base as the base of this load/store
+		switch gepBase := v.Base.(type) {
+		case *ir.Literal:
+			// If the GepInstr base is a literal, mov/load that value as the base
+			instrs, base = movLoadImmediate(nil, gepBase, info)
 
-	// Use GepInstr base as the base of this load/store
-	switch v := gep.Base.(type) {
-	case *ir.Literal:
-		// If the GepInstr base is a literal, mov/load that value as the base
-		instrs, base = movLoadImmediate(nil, v, info)
+		case *ir.Register:
+			// Otherwise, use/load a register for the base
+			instrs, base = useLoadRegister(gepBase.Name, info)
+		}
 
-	case *ir.Register:
-		// Otherwise, use/load a register for the base
-		instrs, base = useLoadRegister(v.Name, info)
+		// Use GepInstr index to calculate offset
+		offset = v.Index * dataSize
+
+	case *ir.AllocInstr:
+		// Only the read register will have an alloc as it's definition
+		// In this case, use the stack variable directly for load/store
+		sv := info.stackVars[v.Target.Name]
+		base = sv.Base
+		offset = sv.Offset
 	}
 
-	// Use GepInstr index to calculate offset
-	offset = gep.Index * dataSize
+	return
+}
+
+func callInstrToArm(call *ir.CallInstr, info *functionInfo) []Instr {
+	numReg := util.Min(len(call.Arguments), maxRegisterParams)
+
+	// Partition register arguments (x0-x7) vs. stack arguments
+	regArgs := call.Arguments[:numReg]
+	stackArgs := call.Arguments[numReg:]
+
+	var instrs []Instr
+
+	// Move/load argument registers (x0-x7)
+	for i, arg := range regArgs {
+		dst := findRegister(fmt.Sprintf("x%v", i), false, info)
+
+		switch v := arg.(type) {
+		case *ir.Register:
+			// Handle scanf calls separately by adding an offset to an existing pointer
+			if call.FnName == "scanf" {
+				baseInstrs, base, offset := getLoadStoreBase(v, info)
+				instrs = append(instrs, baseInstrs...)
+
+				add := &ArithInstr{
+					Operator: AddOperator,
+					Dst:      dst,
+					Src1:     base,
+					Src2: &Immediate{
+						Value: strconv.Itoa(offset),
+					},
+				}
+				addUses(add)
+				instrs = append(instrs, add)
+
+				// For all other calls, just load the appropriate argument register
+			} else {
+				var argInstrs []Instr
+				argInstrs, _ = movLoadRegister(dst, v.Name, false, info)
+				instrs = append(instrs, argInstrs...)
+			}
+
+		case *ir.Literal:
+			var argInstrs []Instr
+			argInstrs, _ = movLoadImmediate(dst, v, info)
+			instrs = append(instrs, argInstrs...)
+		}
+	}
+
+	// Store stack arguments (in reverse)
+	stackInstrs, stackOffset := storeStackArgs(stackArgs, info)
+	instrs = append(instrs, stackInstrs...)
+
+	// Branch and link to subroutine
+	bl := &BranchLinkInstr{call.FnName}
+	addUses(bl)
+	instrs = append(instrs, bl)
+
+	// Restore stack pointer (if any stack arguments were pushed)
+	if stackOffset != 0 {
+		add := &ArithInstr{
+			Operator: AddOperator,
+			Dst:      findRegister("sp", false, info),
+			Src1:     findRegister("sp", false, info),
+			Src2: &Immediate{
+				Value: strconv.Itoa(stackOffset),
+			},
+		}
+		addUses(add)
+		instrs = append(instrs, add)
+	}
+
+	// Store return value to call target (if needed)
+	if call.Target != nil {
+		src := findRegister("x0", false, info)
+
+		targetInstrs, _ := movStoreRegister(src, call.Target.Name, true, info)
+		instrs = append(instrs, targetInstrs...)
+	}
+
+	return instrs
+}
+
+func storeStackArgs(args []ir.Value, info *functionInfo) (instrs []Instr, offset int) {
+	numArgs := len(args)
+
+	// Rectify number of pushed arguments to be even (sp must be a multiple of 16)
+	if numArgs%2 == 1 {
+		numArgs++
+	}
+
+	// Loop through all pairs of stack arguments (in reverse)
+	for i := numArgs - 1; i >= 0; i -= 2 {
+		var src1, src2 *Register
+		var srcInstrs []Instr
+
+		// Increment stack offset
+		offset += 16
+
+		// Get register for first argument from pair
+		switch v := args[i-1].(type) {
+		case *ir.Literal:
+			srcInstrs, src1 = movLoadImmediate(nil, v, info)
+
+		case *ir.Register:
+			srcInstrs, src1 = useLoadRegister(v.Name, info)
+		}
+		instrs = append(instrs, srcInstrs...)
+
+		// If a second argument exists in the pair, get a register for it
+		if i <= numArgs-2 {
+			switch v := args[i].(type) {
+			case *ir.Literal:
+				srcInstrs, src2 = movLoadImmediate(nil, v, info)
+
+			case *ir.Register:
+				srcInstrs, src2 = useLoadRegister(v.Name, info)
+			}
+			instrs = append(instrs, srcInstrs...)
+
+			// Otherwise, just use the first argument as the second (as a buffer so the stack
+			// pointer is still moved by a multiple of 16)
+		} else {
+			src2 = src1
+		}
+
+		// Decrement stack pointer and store argument pair
+		store := &StorePairInstr{
+			Src1:      src1,
+			Src2:      src2,
+			Base:      findRegister("sp", false, info),
+			Offset:    -16,
+			Increment: PreIncrement,
+		}
+		addUses(store)
+
+		instrs = append(instrs, store)
+	}
 
 	return
 }
@@ -358,28 +514,27 @@ func binaryInstrToArm(bin *ir.BinaryInstr, info *functionInfo) []Instr {
 		}
 	}
 
+	var setInstrs []Instr
+
 	// Handle first operand (always move or load immediates)
 	var src1 *Register
 	switch v := op1.(type) {
 	case *ir.Register:
-		src1 = findRegister(v.Name, true, info)
+		setInstrs, src1 = useLoadRegister(v.Name, info)
 
 	case *ir.Literal:
-		var movInstrs []Instr
-		movInstrs, src1 = zeroMovLoadImmediate(nil, v, info)
-		instrs = append(instrs, movInstrs...)
+		setInstrs, src1 = zeroMovLoadImmediate(nil, v, info)
 	}
+	instrs = append(instrs, setInstrs...)
 
 	// Handle second operand
 	var src2 Operand
 	switch v := op2.(type) {
 	case *ir.Register:
-		src2 = findRegister(v.Name, true, info)
+		setInstrs, src2 = useLoadRegister(v.Name, info)
 
 		// Handle immediates on a per-operation basis
 	case *ir.Literal:
-		var setInstrs []Instr
-
 		switch bin.Operator {
 		case ir.AddOperator, ir.SubOperator:
 			// Add/sub instructions can take an immediate
@@ -393,9 +548,8 @@ func binaryInstrToArm(bin *ir.BinaryInstr, info *functionInfo) []Instr {
 			// Logical instructions can take an immediate, but not "0" (so use xzr instead)
 			src2 = boolImmediate(v, info)
 		}
-
-		instrs = append(instrs, setInstrs...)
 	}
+	instrs = append(instrs, setInstrs...)
 
 	// Create arithmetic instruction
 	arith := &ArithInstr{
@@ -467,10 +621,43 @@ func movLoadRegister(dst *Register, name string,
 	return
 }
 
+func movStoreRegister(src *Register, name string,
+	virtual bool, info *functionInfo) (instrs []Instr, reg *Register) {
+
+	// Check for an existing stack variable
+	if v, ok := info.stackVars[name]; ok {
+		// If one is found, store it into register
+		store := &StoreInstr{
+			Src:    src,
+			Base:   v.Base,
+			Offset: v.Offset,
+		}
+		addUses(store)
+		instrs = []Instr{store}
+
+		return
+	}
+
+	dst := findRegister(name, virtual, info)
+
+	// Otherwise, move from src to dst
+	mov := &MovInstr{
+		Dst: dst,
+		Src: src,
+	}
+	addUses(mov)
+	instrs = []Instr{mov}
+
+	return
+}
+
 func boolImmediate(lit *ir.Literal, info *functionInfo) Operand {
 	// Use zero register for false, or an immediate otherwise
 	if lit.ToBool() {
-		return &Immediate{"1"}
+		return &Immediate{
+			Value:  "1",
+			Global: lit.Global,
+		}
 	} else {
 		return findRegister("xzr", false, info)
 	}
@@ -487,7 +674,10 @@ func arithImmediate(lit *ir.Literal, info *functionInfo) (instrs []Instr, op Ope
 
 	// Check if an arithmetic instruction can fit the immediate (<= 12 bits, generally)
 	if err == nil && val >= arithImmediateMin && val <= arithImmediateMax {
-		op = &Immediate{lit.Value}
+		op = &Immediate{
+			Value:  lit.Value,
+			Global: lit.Global,
+		}
 		return
 	}
 
@@ -530,7 +720,10 @@ func movLoadImmediate(dst *Register, lit *ir.Literal, info *functionInfo) (instr
 	if err == nil && val >= movImmediateMin && val <= movImmediateMax {
 		mov := &MovInstr{
 			Dst: dst,
-			Src: &Immediate{strVal},
+			Src: &Immediate{
+				Value:  strVal,
+				Global: lit.Global,
+			},
 		}
 		addUses(mov)
 		instrs = []Instr{mov}
@@ -541,7 +734,10 @@ func movLoadImmediate(dst *Register, lit *ir.Literal, info *functionInfo) (instr
 	// Otherwise, use a load immediate pseudo-instruction
 	load := &LoadImmediateInstr{
 		Dst: dst,
-		Imm: &Immediate{strVal},
+		Imm: &Immediate{
+			Value:  strVal,
+			Global: lit.Global,
+		},
 	}
 	addUses(load)
 	instrs = []Instr{load}
@@ -549,7 +745,8 @@ func movLoadImmediate(dst *Register, lit *ir.Literal, info *functionInfo) (instr
 	return
 }
 
-func createPrologue(info *functionInfo) []Instr {
+func createPrologue(info *functionInfo, offset int) []Instr {
+	// Store frame pointer and link register for safe keeping
 	store := &StorePairInstr{
 		Src1:      findRegister("fp", false, info),
 		Src2:      findRegister("lr", false, info),
@@ -559,22 +756,42 @@ func createPrologue(info *functionInfo) []Instr {
 	}
 	addUses(store)
 
+	// Move frame pointer to new stack pointer
 	mov := &MovInstr{
 		Dst: findRegister("fp", false, info),
 		Src: findRegister("sp", false, info),
 	}
 	addUses(mov)
 
-	return []Instr{store, mov}
+	instrs := []Instr{store, mov}
+
+	// Optionally, decrement stack pointer to make space for stack variables
+	if offset != 0 {
+		sub := &ArithInstr{
+			Operator: SubOperator,
+			Dst:      findRegister("sp", false, info),
+			Src1:     findRegister("sp", false, info),
+			Src2: &Immediate{
+				Value: strconv.Itoa(offset),
+			},
+		}
+		addUses(sub)
+
+		instrs = append(instrs, sub)
+	}
+
+	return instrs
 }
 
 func createEpilogue(info *functionInfo) []Instr {
+	// Restore stack pointer (so it mirrors the frame pointer)
 	mov := &MovInstr{
 		Dst: findRegister("sp", false, info),
 		Src: findRegister("fp", false, info),
 	}
 	addUses(mov)
 
+	// Restore frame pointer and link register from storage
 	load := &LoadPairInstr{
 		Dst1:      findRegister("fp", false, info),
 		Dst2:      findRegister("lr", false, info),
@@ -584,9 +801,10 @@ func createEpilogue(info *functionInfo) []Instr {
 	}
 	addUses(load)
 
+	// Use a return instruction to leave subroutine
 	ret := &RetInstr{}
 
-	return []Instr{load, mov, ret}
+	return []Instr{mov, load, ret}
 }
 
 func findRegister(name string, virtual bool, info *functionInfo) *Register {

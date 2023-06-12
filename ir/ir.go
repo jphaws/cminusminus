@@ -47,9 +47,9 @@ var stackLlvm = false
 const (
 	intSize        = 8
 	pointerSize    = 8
-	printStrName   = "_print"
-	printlnStrName = "_println"
-	scanStrName    = "_scan"
+	PrintStrName   = "_print"
+	PrintlnStrName = "_println"
+	ScanStrName    = "_scan"
 )
 
 func (p ProgramIr) ToLlvm() string {
@@ -63,13 +63,13 @@ func (p ProgramIr) ToLlvm() string {
 	ret += "declare i32 @scanf(ptr, ...)\n\n"
 
 	// Define format strings
-	ret += "@" + printStrName +
+	ret += "@" + PrintStrName +
 		" = private unnamed_addr constant [5 x i8] c\"%ld \\00\", align 1\n"
 
-	ret += "@" + printlnStrName +
+	ret += "@" + PrintlnStrName +
 		" = private unnamed_addr constant [5 x i8] c\"%ld\\0a\\00\", align 1\n"
 
-	ret += "@" + scanStrName +
+	ret += "@" + ScanStrName +
 		" = private unnamed_addr constant [4 x i8] c\"%ld\\00\", align 1\n\n"
 
 	// Declare structs

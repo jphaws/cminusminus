@@ -8,9 +8,9 @@ import (
 )
 
 const (
-	retValName  = "_retval"
-	retPtrName  = "_ret"
-	readPtrName = "_read"
+	RetValName  = "_retval"
+	RetPtrName  = "_ret"
+	ReadPtrName = "_read"
 )
 
 var regNum = 0
@@ -43,11 +43,11 @@ func printStatementToLlvm(prnt *ast.PrintStatement,
 	instrs, val := expressionToLlvm(prnt.Expression, curr, locals, false)
 
 	// Select relevant format string
-	format := "@"
+	var format string
 	if prnt.Newline {
-		format += printlnStrName
+		format = PrintlnStrName
 	} else {
-		format += printStrName
+		format = PrintStrName
 	}
 
 	call := &CallInstr{
@@ -55,8 +55,9 @@ func printStatementToLlvm(prnt *ast.PrintStatement,
 		ReturnType: &IntType{32},
 		Arguments: []Value{
 			&Literal{
-				Value: format,
-				Type:  &PointerType{&IntType{8}},
+				Value:  format,
+				Global: true,
+				Type:   &PointerType{&IntType{8}},
 			},
 			val,
 		},
@@ -111,15 +112,14 @@ func getFieldPointer(base Value, fieldName string,
 }
 
 func readToLlvm(target Value) []Instr {
-	format := "@" + scanStrName
-
 	call := &CallInstr{
 		FnName:     "scanf",
 		ReturnType: &IntType{32},
 		Arguments: []Value{
 			&Literal{
-				Value: format,
-				Type:  &PointerType{&IntType{8}},
+				Value:  ScanStrName,
+				Global: true,
+				Type:   &PointerType{&IntType{8}},
 			},
 			target,
 		},

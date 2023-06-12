@@ -149,15 +149,15 @@ func loadField(base Value, fieldName string,
 
 func allocRead(locals map[string]*Register) *Register {
 	// Create read pointer (if it doesn't already exit)
-	if _, ok := locals[readPtrName]; !ok {
+	if _, ok := locals[ReadPtrName]; !ok {
 		reg := &Register{
-			Name: readPtrName,
+			Name: ReadPtrName,
 			Type: &PointerType{&IntType{64}},
 		}
-		locals[readPtrName] = reg
+		locals[ReadPtrName] = reg
 	}
 
-	return locals[readPtrName]
+	return locals[ReadPtrName]
 }
 
 func returnStatementToLlvmReg(ret *ast.ReturnStatement,
@@ -172,7 +172,7 @@ func returnStatementToLlvmReg(ret *ast.ReturnStatement,
 
 	// Process expression
 	instrs, val := expressionToLlvm(ret.Expression, curr, locals, false)
-	curr.context[retValName] = val
+	curr.context[RetValName] = val
 
 	return append(instrs, jump)
 }
@@ -253,7 +253,7 @@ func functionFiniLlvmReg(fn *ast.Function, funcEntry *Block,
 	curr *Block, locals map[string]*Register) []Instr {
 
 	// Allocate read pointer (if needed)
-	if v, ok := locals[readPtrName]; ok {
+	if v, ok := locals[ReadPtrName]; ok {
 		alloc := &AllocInstr{v}
 		funcEntry.Allocs = append(funcEntry.Allocs, alloc)
 		addDefUse(alloc)
@@ -270,7 +270,7 @@ func functionFiniLlvmReg(fn *ast.Function, funcEntry *Block,
 	}
 
 	// Get return value
-	retVal := findValue(retValName, curr, locals, typeToLlvm(fn.ReturnType))
+	retVal := findValue(RetValName, curr, locals, typeToLlvm(fn.ReturnType))
 
 	// Create return instruction
 	ret := &RetInstr{retVal}

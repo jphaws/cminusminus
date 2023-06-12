@@ -84,7 +84,7 @@ func returnStatementToLlvmStack(ret *ast.ReturnStatement, curr *Block,
 
 	// Store expression value and jump to exit block
 	store := &StoreInstr{
-		Mem: locals[retPtrName],
+		Mem: locals[RetPtrName],
 		Reg: val,
 	}
 	addDefUse(store)
@@ -186,10 +186,10 @@ func functionInitLlvmStack(fn *ast.Function, curr *Block) (instrs []Instr,
 	}
 
 	retPtr := &Register{
-		Name: retPtrName,
+		Name: RetPtrName,
 		Type: &PointerType{typeToLlvm(fn.ReturnType)},
 	}
-	locals[retPtrName] = retPtr
+	locals[RetPtrName] = retPtr
 
 	alloc := &AllocInstr{retPtr}
 	addDefUse(alloc)
@@ -206,7 +206,7 @@ func functionFiniLlvmStack(fn *ast.Function, locals map[string]*Register) []Inst
 	}
 
 	retVal := &Register{
-		Name: retValName,
+		Name: RetValName,
 		Type: typeToLlvm(fn.ReturnType),
 	}
 	locals[retVal.Name] = retVal
@@ -214,7 +214,7 @@ func functionFiniLlvmStack(fn *ast.Function, locals map[string]*Register) []Inst
 	// Create load and return instructions
 	load := &LoadInstr{
 		Reg: retVal,
-		Mem: locals[retPtrName],
+		Mem: locals[RetPtrName],
 	}
 	addDefUse(load)
 

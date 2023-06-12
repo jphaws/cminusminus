@@ -7,7 +7,7 @@ import (
 )
 
 type ProgramAsm struct {
-	Globals   map[string]struct{}
+	Globals   map[string]string
 	Functions map[string]*Function
 }
 
@@ -19,13 +19,9 @@ type Function struct {
 	Blocks       []*Block
 }
 
-var globals = map[string]struct{}{}
+var globals = map[string]string{}
 
-var constants = map[string]string{
-	"$_print":   "%ld \\000",
-	"$_println": "%ld\\012\\000",
-	"$_scan":    "%ld\\000",
-}
+var constantMap = map[string]string{}
 
 func (p ProgramAsm) ToAsm() string {
 	// Add target details
@@ -34,23 +30,19 @@ func (p ProgramAsm) ToAsm() string {
 	// Set main as global
 	ret += ".global main\n\n"
 
-	// Switch to the rodata section
+	// Define constants in the rodata section
 	ret += ".section .rodata\n"
-	ret += fmt.Sprintf(".align %v\n", dataSize)
-
-	// Define constants
-	for k, v := range constants {
-		ret += k + ":\n"
-		ret += fmt.Sprintf("    .ascii \"%v\"\n", v)
-	}
-	ret += "\n"
+	ret += ".align 8\n"
+	ret += "$" + ir.PrintStrName + ":\n    .asciz \"%ld \"\n"
+	ret += "$" + ir.PrintlnStrName + ":\n    .asciz \"%ld\\n\"\n"
+	ret += "$" + ir.ScanStrName + ":\n    .asciz \"%ld\"\n\n"
 
 	// Switch to the bss section
 	ret += ".section .bss\n"
 	ret += fmt.Sprintf(".align %v\n", dataSize)
 
 	// Define globals
-	for glob := range p.Globals {
+	for _, glob := range p.Globals {
 		ret += fmt.Sprintf(".lcomm %v, %v\n", glob, dataSize)
 	}
 	ret += "\n"
@@ -85,14 +77,13 @@ func CreateAsm(program *ir.ProgramIr) *ProgramAsm {
 
 	// Populate globals map
 	for _, v := range program.Globals {
-		globals["$"+v.Name] = struct{}{}
+		globals[v.Name] = "$" + v.Name
 	}
 
-	/* TODO: Why is this here?
-	for k, v := range constants {
-		globals[k] =
-	}
-	*/
+	// Add constants to globals map
+	globals["@"+ir.PrintStrName] = "$_print"
+	globals["@"+ir.PrintlnStrName] = "$_println"
+	globals["@"+ir.ScanStrName] = "$_scan"
 
 	// Create a Go routine for each function
 	for k, v := range program.Functions {
@@ -104,6 +95,11 @@ func CreateAsm(program *ir.ProgramIr) *ProgramAsm {
 	for k := range program.Functions {
 		fns[k] = <-funcChan
 	}
+
+	// Delete constants from globals map
+	delete(globals, "@"+ir.PrintStrName)
+	delete(globals, "@"+ir.PrintlnStrName)
+	delete(globals, "@"+ir.ScanStrName)
 
 	return &ProgramAsm{
 		Globals:   globals,
