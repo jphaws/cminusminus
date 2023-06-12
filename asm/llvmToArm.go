@@ -27,22 +27,22 @@ var tmpNum = 0
 
 type functionInfo struct {
 	epiBlock    *Block
-	blocks      map[string]*Block
+	blockMap    map[*ir.Block]*Block
 	registers   map[string]*Register
-	stackVars   map[string]StackOffset
+	stackVars   map[string]stackOffset
 	spillOffset int
 }
 
-type StackOffset struct {
-	Base   *Register
-	Offset int
+type stackOffset struct {
+	base   *Register
+	offset int
 }
 
 func processFunction(fn *ir.Function, name string, ch chan *Function) {
 	info := &functionInfo{
-		blocks:    map[string]*Block{},
+		blockMap:  map[*ir.Block]*Block{},
 		registers: map[string]*Register{},
-		stackVars: map[string]StackOffset{},
+		stackVars: map[string]stackOffset{},
 	}
 
 	// Pre-populate register and stack maps with parameters
@@ -58,8 +58,13 @@ func processFunction(fn *ir.Function, name string, ch chan *Function) {
 	fmt.Printf("registers: %v\n", info.registers)
 	fmt.Printf("stackVars: %v\n", info.stackVars)
 
-	// Process all CFG blocks
-	blocks := processBlock(fn.Cfg, info)
+	// Collect a slice of all ARM blocks and map CFG -> ARM blocks
+	blocks := collectBlock(fn.Cfg, info)
+
+	// Process all blocks
+	for irBlock, armBlock := range info.blockMap {
+		processBlock(irBlock, armBlock, info)
+	}
 
 	// Rectify stack pointer to a 16-byte boundary
 	if stackPointerOffset%16 != 0 {
@@ -102,9 +107,9 @@ func populateParams(params []*ir.Register, info *functionInfo) {
 
 	// Create name->offset mappings for stack parameters
 	for i, v := range stackParams {
-		info.stackVars[v.Name] = StackOffset{
-			Base:   findRegister("fp", false, info),
-			Offset: paramOffset + i*dataSize,
+		info.stackVars[v.Name] = stackOffset{
+			base:   findRegister("fp", false, info),
+			offset: paramOffset + i*dataSize,
 		}
 	}
 }
@@ -112,44 +117,62 @@ func populateParams(params []*ir.Register, info *functionInfo) {
 func populateLocals(allocs []*ir.AllocInstr, info *functionInfo) int {
 	// Create name->offset mappings for stack locals
 	for i, v := range allocs {
-		info.stackVars[v.Target.Name] = StackOffset{
-			Base:   findRegister("sp", false, info),
-			Offset: localOffset + i*dataSize,
+		info.stackVars[v.Target.Name] = stackOffset{
+			base:   findRegister("sp", false, info),
+			offset: localOffset + i*dataSize,
 		}
 	}
 
 	return len(allocs) * dataSize
 }
 
-func processBlock(b *ir.Block, info *functionInfo) []*Block {
-	// Create new ASM block and add to the block list
+func collectBlock(b *ir.Block, info *functionInfo) []*Block {
+	// Create new ASM block and add to the block map
 	curr := &Block{
 		Label: "." + b.Label(),
 	}
-	info.blocks[curr.Label] = curr
+	info.blockMap[b] = curr
 
-	// Translate all LLVM instructions to ARM
-	for _, v := range b.Instrs {
-		curr.Instrs = append(curr.Instrs, instrToArm(v, curr, info)...)
-	}
+	// Create block slice
+	blocks := []*Block{curr}
 
-	ret := []*Block{curr}
-
-	// Process next block (if it exists)
+	// Collect next block (if it exists)
 	if b.Next != nil {
-		if _, ok := info.blocks["."+b.Next.Label()]; !ok {
-			ret = append(ret, processBlock(b.Next, info)...)
+		if _, ok := info.blockMap[b.Next]; !ok {
+			nextBlocks := collectBlock(b.Next, info)
+
+			// Add next block to ARM block successors
+			blocks = append(blocks, nextBlocks...)
+			curr.Next = append(curr.Next, blocks[0])
 		}
 	}
 
 	// Process else block (if it exists)
 	if b.Els != nil {
-		if _, ok := info.blocks["."+b.Els.Label()]; !ok {
-			ret = append(ret, processBlock(b.Els, info)...)
+		if _, ok := info.blockMap[b.Els]; !ok {
+			nextBlocks := collectBlock(b.Els, info)
+			blocks = append(blocks, nextBlocks...)
+
+			// Add else block to ARM block successors
+			curr.Next = append(curr.Next, blocks[0])
 		}
 	}
 
-	return ret
+	return blocks
+}
+
+func processBlock(irBlock *ir.Block, armBlock *Block, info *functionInfo) {
+	// Translate all LLVM instructions to ARM
+	for _, v := range irBlock.Instrs {
+		// Use EndInstrs slice for branch-related instruction
+		if branch, ok := v.(*ir.BranchInstr); ok {
+			armBlock.EndInstrs = append(armBlock.EndInstrs, branchInstrToArm(branch, info)...)
+			break
+		}
+
+		// Use Instrs slice for all other instructions
+		armBlock.Instrs = append(armBlock.Instrs, instrToArm(v, armBlock, info)...)
+	}
 }
 
 func instrToArm(instr ir.Instr, curr *Block, info *functionInfo) []Instr {
@@ -163,10 +186,12 @@ func instrToArm(instr ir.Instr, curr *Block, info *functionInfo) []Instr {
 	case *ir.RetInstr:
 		info.epiBlock = curr
 		return retInstrToArm(v, info)
-	case *ir.BranchInstr:
-		return nil
+	case *ir.CompInstr:
+		return compInstrToArm(v, info)
 	case *ir.BinaryInstr:
 		return binaryInstrToArm(v, info)
+	case *ir.ConvInstr:
+		return convInstrToArm(v, info)
 	case *ir.PhiInstr:
 		return nil
 	}
@@ -328,8 +353,8 @@ func getLoadStoreBase(reg *ir.Register, info *functionInfo) (instrs []Instr, bas
 		// Only the read register will have an alloc as it's definition
 		// In this case, use the stack variable directly for load/store
 		sv := info.stackVars[v.Target.Name]
-		base = sv.Base
-		offset = sv.Offset
+		base = sv.base
+		offset = sv.offset
 	}
 
 	return
@@ -496,6 +521,162 @@ func retInstrToArm(ret *ir.RetInstr, info *functionInfo) []Instr {
 	return instrs
 }
 
+func compInstrToArm(cmp *ir.CompInstr, info *functionInfo) []Instr {
+	var forBranch bool
+	uses := cmp.Target.Uses
+
+	// Check if this compare target is used only as a branch condition
+	if len(uses) == 1 {
+		for k := range uses {
+			if _, ok := k.(*ir.BranchInstr); ok {
+				// If so, mark the comparison so that it doesn't require a conditional set
+				forBranch = true
+			}
+
+			break
+		}
+	}
+
+	// Create compare instruction
+	return compToArm(cmp, forBranch, info)
+}
+
+func compToArm(cmp *ir.CompInstr, forBranch bool, info *functionInfo) []Instr {
+	var instrs []Instr
+	var op1 *Register
+	var op2 Operand
+
+	// Use/mov/load the first compare operand
+	switch v := cmp.Op1.(type) {
+	case *ir.Literal:
+		instrs, op1 = movLoadImmediate(nil, v, info)
+	case *ir.Register:
+		instrs, op1 = useLoadRegister(v.Name, info)
+	}
+
+	// Use/mov/load the second compare operand
+	var setInstrs []Instr
+	switch v := cmp.Op2.(type) {
+	case *ir.Literal:
+		// Compare instructions can take a 12-bit immediate as the second operand
+		setInstrs, op2 = arithImmediate(v, info)
+	case *ir.Register:
+		setInstrs, op2 = useLoadRegister(v.Name, info)
+	}
+	instrs = append(instrs, setInstrs...)
+
+	// Create compare instruction
+	comp := &CompInstr{
+		Op1: op1,
+		Op2: op2,
+	}
+	addUses(comp)
+	instrs = append(instrs, comp)
+
+	// Bail out if this compare will only set condition codes for a later branch
+	if forBranch {
+		return instrs
+	}
+
+	// Otherwise, add a conditional set instruction to save the comparison result
+	cset := &ConditionalSetInstr{
+		Dst:       findRegister(cmp.Target.Name, true, info),
+		Condition: conditionToArm(cmp.Condition),
+	}
+	addUses(cset)
+
+	return append(instrs, cset)
+}
+
+func branchInstrToArm(br *ir.BranchInstr, info *functionInfo) []Instr {
+	var instrs []Instr
+	var branchCond Condition
+
+	// Check if this is an unconditional branch
+	if br.Cond == nil {
+		// If so, create a branch instruction without a condition
+		branch := &BranchInstr{
+			Block: info.blockMap[br.Next],
+		}
+		addUses(branch)
+
+		return []Instr{branch}
+	}
+
+	// Otherwise, use a compare/test instruction along with a conditional branch
+	switch cond := br.Cond.(type) {
+	case *ir.Literal:
+		// For literals, test the literal against itself
+		var op1 *Register
+		instrs, op1 = zeroMovLoadImmediate(nil, cond, info)
+
+		test := &TestInstr{
+			Op1: op1,
+			Op2: boolImmediate(cond, info),
+		}
+		addUses(test)
+		instrs = append(instrs, test)
+
+		// Then use "not equal" for the branch condition (to check if the literal is not zero)
+		branchCond = NotEqualCondition
+
+	case *ir.Register:
+		// For registers, check the condition register definition and insert a test/comp
+		var regInstrs []Instr
+		regInstrs, branchCond = branchRegisterToArm(cond, info)
+		instrs = append(instrs, regInstrs...)
+	}
+
+	// Conditionally branch to the next block
+	branchNext := &BranchInstr{
+		Condition: branchCond,
+		Block:     info.blockMap[br.Next],
+	}
+	addUses(branchNext)
+
+	// Unconditionally branch to the else block
+	branchElse := &BranchInstr{
+		Block: info.blockMap[br.Els],
+	}
+	addUses(branchElse)
+
+	return append(instrs, branchNext, branchElse)
+}
+
+func branchRegisterToArm(cond *ir.Register, info *functionInfo) (instrs []Instr, bc Condition) {
+	// If the condition definition is a compare, use its condition
+	if def, ok := cond.Def.(*ir.CompInstr); ok {
+		bc = conditionToArm(def.Condition)
+		return
+	}
+
+	var name string
+
+	// Otherwise, get the register name from the ConvInstr or BinaryInstr target
+	switch def := cond.Def.(type) {
+	case *ir.ConvInstr:
+		name = def.Src.(*ir.Register).Name
+	case *ir.BinaryInstr:
+		name = def.Target.Name
+	}
+
+	var op *Register
+	instrs, op = useLoadRegister(name, info)
+
+	// Then, test the condition register against itself
+	test := &TestInstr{
+		Op1: op,
+		Op2: op,
+	}
+	addUses(test)
+	instrs = append(instrs, test)
+
+	// Use "not equal" for the branch condition
+	bc = NotEqualCondition
+
+	return
+}
+
 func binaryInstrToArm(bin *ir.BinaryInstr, info *functionInfo) []Instr {
 	instrs := []Instr{}
 
@@ -547,6 +728,7 @@ func binaryInstrToArm(bin *ir.BinaryInstr, info *functionInfo) []Instr {
 		case ir.AndOperator, ir.OrOperator, ir.XorOperator:
 			// Logical instructions can take an immediate, but not "0" (so use xzr instead)
 			src2 = boolImmediate(v, info)
+			setInstrs = []Instr{}
 		}
 	}
 	instrs = append(instrs, setInstrs...)
@@ -559,9 +741,14 @@ func binaryInstrToArm(bin *ir.BinaryInstr, info *functionInfo) []Instr {
 		Src2:     src2,
 	}
 	addUses(arith)
-	instrs = append(instrs, arith)
 
-	return instrs
+	return append(instrs, arith)
+}
+
+func convInstrToArm(conv *ir.ConvInstr, info *functionInfo) []Instr {
+	// Map target name to source register
+	info.registers[conv.Target.Name] = findRegister(conv.Src.(*ir.Register).Name, false, info)
+	return nil
 }
 
 func useLoadRegister(name string, info *functionInfo) (instrs []Instr, reg *Register) {
@@ -572,8 +759,8 @@ func useLoadRegister(name string, info *functionInfo) (instrs []Instr, reg *Regi
 		// Load the stack variable into a new temporary register
 		load := &LoadInstr{
 			Dst:    reg,
-			Base:   v.Base,
-			Offset: v.Offset,
+			Base:   v.base,
+			Offset: v.offset,
 		}
 		addUses(load)
 
@@ -601,8 +788,8 @@ func movLoadRegister(dst *Register, name string,
 		// If one is found, load it into register
 		load := &LoadInstr{
 			Dst:    dst,
-			Base:   v.Base,
-			Offset: v.Offset,
+			Base:   v.base,
+			Offset: v.offset,
 		}
 		addUses(load)
 		instrs = []Instr{load}
@@ -629,8 +816,8 @@ func movStoreRegister(src *Register, name string,
 		// If one is found, store it into register
 		store := &StoreInstr{
 			Src:    src,
-			Base:   v.Base,
-			Offset: v.Offset,
+			Base:   v.base,
+			Offset: v.offset,
 		}
 		addUses(store)
 		instrs = []Instr{store}
@@ -847,6 +1034,25 @@ func nextTempReg(table map[string]*Register) *Register {
 
 	table[reg.Name] = reg
 	return reg
+}
+
+func conditionToArm(cond ir.Condition) Condition {
+	switch cond {
+	case ir.EqualCondition:
+		return EqualCondition
+	case ir.NotEqualCondition:
+		return NotEqualCondition
+	case ir.GreaterThanCondition:
+		return GreaterThanCondition
+	case ir.GreaterEqualCondition:
+		return GreaterEqualCondition
+	case ir.LessThanCondition:
+		return LessThanCondition
+	case ir.LessEqualCondition:
+		return LessEqualCondition
+	}
+
+	panic("Unsupported condition")
 }
 
 func operatorToArm(op ir.Operator) Operator {

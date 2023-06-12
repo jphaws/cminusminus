@@ -6,9 +6,10 @@ import (
 
 // === Block ===
 type Block struct {
-	Label  string
-	Instrs []Instr
-	Next   []*Block
+	Label     string
+	Instrs    []Instr
+	EndInstrs []Instr
+	Next      []*Block
 }
 
 // === Instructions ===
@@ -225,6 +226,79 @@ func (a ArithInstr) String() string {
 	return fmt.Sprintf("%v %v, %v, %v", a.Operator, a.Dst, a.Src1, a.Src2)
 }
 
+type CompInstr struct {
+	Op1 *Register
+	Op2 Operand
+}
+
+func (c CompInstr) getDsts() []*Register {
+	return nil
+}
+
+func (c CompInstr) getSrcs() []Operand {
+	return []Operand{c.Op1, c.Op2}
+}
+
+func (c CompInstr) String() string {
+	return fmt.Sprintf("cmp %v, %v", c.Op1, c.Op2)
+}
+
+type TestInstr struct {
+	Op1 *Register
+	Op2 Operand
+}
+
+func (t TestInstr) getDsts() []*Register {
+	return nil
+}
+
+func (t TestInstr) getSrcs() []Operand {
+	return []Operand{t.Op1, t.Op2}
+}
+
+func (t TestInstr) String() string {
+	return fmt.Sprintf("tst %v, %v", t.Op1, t.Op2)
+}
+
+type ConditionalSetInstr struct {
+	Dst       *Register
+	Condition Condition
+}
+
+func (c ConditionalSetInstr) getDsts() []*Register {
+	return []*Register{c.Dst}
+}
+
+func (c ConditionalSetInstr) getSrcs() []Operand {
+	return nil
+}
+
+func (c ConditionalSetInstr) String() string {
+	return fmt.Sprintf("cset %v, %v", c.Dst, c.Condition)
+}
+
+type BranchInstr struct {
+	Condition Condition
+	Block     *Block
+}
+
+func (b BranchInstr) getDsts() []*Register {
+	return nil
+}
+
+func (b BranchInstr) getSrcs() []Operand {
+	return nil
+}
+
+func (b BranchInstr) String() string {
+	var cond string
+	if b.Condition != NoCondition {
+		cond = fmt.Sprintf(".%v", b.Condition)
+	}
+
+	return fmt.Sprintf("b%v %v", cond, b.Block.Label)
+}
+
 type BranchLinkInstr struct {
 	Label string
 }
@@ -253,6 +327,23 @@ func (m RetInstr) getSrcs() []Operand {
 
 func (m RetInstr) String() string {
 	return "ret"
+}
+
+// === Conditions ===
+type Condition string
+
+const (
+	NoCondition           Condition = ""
+	EqualCondition        Condition = "eq"
+	NotEqualCondition     Condition = "ne"
+	GreaterThanCondition  Condition = "gt"
+	GreaterEqualCondition Condition = "ge"
+	LessThanCondition     Condition = "lt"
+	LessEqualCondition    Condition = "le"
+)
+
+func (c Condition) String() string {
+	return string(c)
 }
 
 // === Operators ===
