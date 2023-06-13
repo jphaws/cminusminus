@@ -162,11 +162,16 @@ func collectBlock(b *ir.Block, info *functionInfo) []*Block {
 }
 
 func processBlock(irBlock *ir.Block, armBlock *Block, info *functionInfo) {
-	// Translate all LLVM instructions to ARM
+	// Translate phi instructions to ARM
+	for _, v := range irBlock.Phis {
+		armBlock.Instrs = phiInstrToArm(v, info)
+	}
+
+	// Translate all (non-magic) LLVM instructions to ARM
 	for _, v := range irBlock.Instrs {
 		// Use EndInstrs slice for branch-related instruction
 		if branch, ok := v.(*ir.BranchInstr); ok {
-			armBlock.EndInstrs = append(armBlock.EndInstrs, branchInstrToArm(branch, info)...)
+			armBlock.Terminals = append(armBlock.Terminals, branchInstrToArm(branch, info)...)
 			break
 		}
 
@@ -192,8 +197,6 @@ func instrToArm(instr ir.Instr, curr *Block, info *functionInfo) []Instr {
 		return binaryInstrToArm(v, info)
 	case *ir.ConvInstr:
 		return convInstrToArm(v, info)
-	case *ir.PhiInstr:
-		return nil
 	}
 
 	return nil
@@ -267,7 +270,6 @@ func storeInstrToArm(st *ir.StoreInstr, info *functionInfo) []Instr {
 	switch v := st.Reg.(type) {
 	case *ir.Register:
 		instrs, src = useLoadRegister(v.Name, info)
-
 	case *ir.Literal:
 		instrs, src = movLoadImmediate(nil, v, info)
 	}
@@ -340,7 +342,6 @@ func getLoadStoreBase(reg *ir.Register, info *functionInfo) (instrs []Instr, bas
 		case *ir.Literal:
 			// If the GepInstr base is a literal, mov/load that value as the base
 			instrs, base = movLoadImmediate(nil, gepBase, info)
-
 		case *ir.Register:
 			// Otherwise, use/load a register for the base
 			instrs, base = useLoadRegister(gepBase.Name, info)
@@ -432,7 +433,7 @@ func callInstrToArm(call *ir.CallInstr, info *functionInfo) []Instr {
 	if call.Target != nil {
 		src := findRegister("x0", false, info)
 
-		targetInstrs, _ := movStoreRegister(src, call.Target.Name, true, info)
+		targetInstrs := movStoreRegister(src, call.Target.Name, true, info)
 		instrs = append(instrs, targetInstrs...)
 	}
 
@@ -459,7 +460,6 @@ func storeStackArgs(args []ir.Value, info *functionInfo) (instrs []Instr, offset
 		switch v := args[i-1].(type) {
 		case *ir.Literal:
 			srcInstrs, src1 = movLoadImmediate(nil, v, info)
-
 		case *ir.Register:
 			srcInstrs, src1 = useLoadRegister(v.Name, info)
 		}
@@ -470,7 +470,6 @@ func storeStackArgs(args []ir.Value, info *functionInfo) (instrs []Instr, offset
 			switch v := args[i].(type) {
 			case *ir.Literal:
 				srcInstrs, src2 = movLoadImmediate(nil, v, info)
-
 			case *ir.Register:
 				srcInstrs, src2 = useLoadRegister(v.Name, info)
 			}
@@ -513,7 +512,6 @@ func retInstrToArm(ret *ir.RetInstr, info *functionInfo) []Instr {
 	switch v := ret.Src.(type) {
 	case *ir.Register:
 		instrs, _ = movLoadRegister(dst, v.Name, true, info)
-
 	case *ir.Literal:
 		instrs, _ = movLoadImmediate(dst, v, info)
 	}
@@ -702,7 +700,6 @@ func binaryInstrToArm(bin *ir.BinaryInstr, info *functionInfo) []Instr {
 	switch v := op1.(type) {
 	case *ir.Register:
 		setInstrs, src1 = useLoadRegister(v.Name, info)
-
 	case *ir.Literal:
 		setInstrs, src1 = zeroMovLoadImmediate(nil, v, info)
 	}
@@ -749,6 +746,28 @@ func convInstrToArm(conv *ir.ConvInstr, info *functionInfo) []Instr {
 	// Map target name to source register
 	info.registers[conv.Target.Name] = findRegister(conv.Src.(*ir.Register).Name, false, info)
 	return nil
+}
+
+func phiInstrToArm(phi *ir.PhiInstr, info *functionInfo) []Instr {
+	tmp := nextTempReg(info.registers)
+
+	for _, val := range phi.Values {
+		prev := info.blockMap[val.Block]
+
+		var phiOutInstrs []Instr
+
+		switch v := val.Value.(type) {
+		case *ir.Literal:
+			phiOutInstrs, _ = movLoadImmediate(tmp, v, info)
+		case *ir.Register:
+			// TODO: Is the movLoad necessary here, or can we use a simple mov?
+			phiOutInstrs, _ = movLoadRegister(tmp, v.Name, true, info)
+		}
+
+		prev.PhiOuts = append(prev.PhiOuts, phiOutInstrs...)
+	}
+
+	return movStoreRegister(tmp, phi.Target.Name, true, info)
 }
 
 func useLoadRegister(name string, info *functionInfo) (instrs []Instr, reg *Register) {
@@ -808,9 +827,7 @@ func movLoadRegister(dst *Register, name string,
 	return
 }
 
-func movStoreRegister(src *Register, name string,
-	virtual bool, info *functionInfo) (instrs []Instr, reg *Register) {
-
+func movStoreRegister(src *Register, name string, virtual bool, info *functionInfo) []Instr {
 	// Check for an existing stack variable
 	if v, ok := info.stackVars[name]; ok {
 		// If one is found, store it into register
@@ -820,9 +837,8 @@ func movStoreRegister(src *Register, name string,
 			Offset: v.offset,
 		}
 		addUses(store)
-		instrs = []Instr{store}
 
-		return
+		return []Instr{store}
 	}
 
 	dst := findRegister(name, virtual, info)
@@ -833,9 +849,8 @@ func movStoreRegister(src *Register, name string,
 		Src: src,
 	}
 	addUses(mov)
-	instrs = []Instr{mov}
 
-	return
+	return []Instr{mov}
 }
 
 func boolImmediate(lit *ir.Literal, info *functionInfo) Operand {

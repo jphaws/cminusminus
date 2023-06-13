@@ -69,7 +69,11 @@ func (b *Block) toAsm() string {
 		ret += fmt.Sprintf("    %v\n", v)
 	}
 
-	for _, v := range b.EndInstrs {
+	for _, v := range b.PhiOuts {
+		ret += fmt.Sprintf("    %v\n", v)
+	}
+
+	for _, v := range b.Terminals {
 		ret += fmt.Sprintf("    %v\n", v)
 	}
 

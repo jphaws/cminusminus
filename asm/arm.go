@@ -8,7 +8,8 @@ import (
 type Block struct {
 	Label     string
 	Instrs    []Instr
-	EndInstrs []Instr
+	PhiOuts   []Instr
+	Terminals []Instr
 	Next      []*Block
 }
 
