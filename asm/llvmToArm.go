@@ -45,6 +45,9 @@ func processFunction(fn *ir.Function, name string, ch chan *Function) {
 		stackVars: map[string]stackOffset{},
 	}
 
+	// Pre-populate general registers
+	genRegs := populateGeneralRegs(info)
+
 	// Pre-populate register and stack maps with parameters
 	populateParams(fn.Parameters, info)
 
@@ -53,10 +56,6 @@ func processFunction(fn *ir.Function, name string, ch chan *Function) {
 
 	// Set spill offset to top of local section
 	info.spillOffset = stackPointerOffset
-
-	// TODO: Remove me
-	fmt.Printf("registers: %v\n", info.registers)
-	fmt.Printf("stackVars: %v\n", info.stackVars)
 
 	// Collect a slice of all ARM blocks and map CFG -> ARM blocks
 	blocks := collectBlock(fn.Cfg, info)
@@ -75,11 +74,15 @@ func processFunction(fn *ir.Function, name string, ch chan *Function) {
 	proBlock := &Block{
 		Label:  name,
 		Instrs: createPrologue(info, stackPointerOffset),
+		Next:   []*Block{blocks[0]},
 	}
 
 	// Add epilogue instructions to return block
 	epiBlock := info.epiBlock
 	epiBlock.Instrs = append(epiBlock.Instrs, createEpilogue(info)...)
+
+	// TODO: Use allocateRegisters
+	allocateRegisters(proBlock, genRegs)
 
 	// Create function wrapper
 	ret := &Function{
@@ -139,23 +142,21 @@ func collectBlock(b *ir.Block, info *functionInfo) []*Block {
 	// Collect next block (if it exists)
 	if b.Next != nil {
 		if _, ok := info.blockMap[b.Next]; !ok {
-			nextBlocks := collectBlock(b.Next, info)
-
-			// Add next block to ARM block successors
-			blocks = append(blocks, nextBlocks...)
-			curr.Next = append(curr.Next, blocks[0])
+			blocks = append(blocks, collectBlock(b.Next, info)...)
 		}
+
+		// Add next block to ARM block successors
+		curr.Next = append(curr.Next, info.blockMap[b.Next])
 	}
 
 	// Process else block (if it exists)
 	if b.Els != nil {
 		if _, ok := info.blockMap[b.Els]; !ok {
-			nextBlocks := collectBlock(b.Els, info)
-			blocks = append(blocks, nextBlocks...)
-
-			// Add else block to ARM block successors
-			curr.Next = append(curr.Next, blocks[0])
+			blocks = append(blocks, collectBlock(b.Els, info)...)
 		}
+
+		// Add else block to ARM block successors
+		curr.Next = append(curr.Next, info.blockMap[b.Els])
 	}
 
 	return blocks
@@ -749,21 +750,24 @@ func convInstrToArm(conv *ir.ConvInstr, info *functionInfo) []Instr {
 }
 
 func phiInstrToArm(phi *ir.PhiInstr, info *functionInfo) []Instr {
+	// Create temporary register for phi value storage
 	tmp := nextTempReg(info.registers)
 
+	// Handle all phi values
 	for _, val := range phi.Values {
 		prev := info.blockMap[val.Block]
 
 		var phiOutInstrs []Instr
 
+		// Move/load phi value into temporary register
 		switch v := val.Value.(type) {
 		case *ir.Literal:
 			phiOutInstrs, _ = movLoadImmediate(tmp, v, info)
 		case *ir.Register:
-			// TODO: Is the movLoad necessary here, or can we use a simple mov?
 			phiOutInstrs, _ = movLoadRegister(tmp, v.Name, true, info)
 		}
 
+		// Append move/load to previous block
 		prev.PhiOuts = append(prev.PhiOuts, phiOutInstrs...)
 	}
 
@@ -1089,4 +1093,43 @@ func operatorToArm(op ir.Operator) Operator {
 	}
 
 	panic("Unsupported operator")
+}
+
+func populateGeneralRegs(info *functionInfo) []*Register {
+	// Create general register list
+	genRegs := []*Register{
+		&Register{Name: "x0"}, // Parameters (x0-x7)
+		&Register{Name: "x1"},
+		&Register{Name: "x2"},
+		&Register{Name: "x3"},
+		&Register{Name: "x4"},
+		&Register{Name: "x5"},
+		&Register{Name: "x6"},
+		&Register{Name: "x7"},
+		&Register{Name: "x8"}, // Syscall number
+		&Register{Name: "x9"}, // Caller save (x9-x15)
+		&Register{Name: "x10"},
+		&Register{Name: "x11"},
+		&Register{Name: "x12"},
+		&Register{Name: "x13"},
+		&Register{Name: "x14"},
+		&Register{Name: "x15"}, // No x16-x18
+		&Register{Name: "x19"}, // Callee save (x19-x28)
+		&Register{Name: "x20"},
+		&Register{Name: "x21"},
+		&Register{Name: "x22"},
+		&Register{Name: "x23"},
+		&Register{Name: "x24"},
+		&Register{Name: "x25"},
+		&Register{Name: "x26"},
+		&Register{Name: "x27"},
+		&Register{Name: "x28"},
+	}
+
+	// Add general registers to register map
+	for _, reg := range genRegs {
+		info.registers[reg.Name] = reg
+	}
+
+	return genRegs
 }
