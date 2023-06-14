@@ -11,9 +11,8 @@ import (
 const (
 	dataSize = 8
 
-	paramOffset  = 16 // Offset from fp
-	calleeOffset = 0  // Offset from fp
-	localOffset  = 0  // Offset from sp
+	paramOffset = 16 // Offset from fp
+	localOffset = 0  // Offset from sp
 
 	maxRegisterParams = 8
 
@@ -49,7 +48,7 @@ func processFunction(fn *ir.Function, name string, ch chan *Function) {
 	genRegs, specRegs := populatePhysicalRegs(info)
 
 	// Pre-populate register and stack maps with parameters
-	populateParams(fn.Parameters, info)
+	paramInstrs := populateParams(fn.Parameters, info)
 
 	// Pre-populate stack map with local stack variables
 	stackPointerOffset := populateLocals(fn.Cfg.Allocs, info)
@@ -65,24 +64,29 @@ func processFunction(fn *ir.Function, name string, ch chan *Function) {
 		processBlock(irBlock, armBlock, info)
 	}
 
+	// Allocate physical registers
+	allocateRegisters(blocks[0], genRegs, specRegs)
+
+	// Get callee register slice
+	callees := findCallees(genRegs)
+	stackPointerOffset += len(callees) * dataSize
+
 	// Rectify stack pointer to a 16-byte boundary
 	if stackPointerOffset%16 != 0 {
-		stackPointerOffset += 8
+		stackPointerOffset += dataSize
 	}
 
 	// Create prologue block
 	proBlock := &Block{
 		Label:  name,
-		Instrs: createPrologue(info, stackPointerOffset),
+		Instrs: createPrologue(callees, info, stackPointerOffset),
 		Next:   []*Block{blocks[0]},
 	}
+	proBlock.Instrs = append(proBlock.Instrs, paramInstrs...)
 
 	// Add epilogue instructions to return block
 	epiBlock := info.epiBlock
-	epiBlock.Instrs = append(epiBlock.Instrs, createEpilogue(info)...)
-
-	// TODO: Use allocateRegisters
-	allocateRegisters(proBlock, genRegs, specRegs)
+	epiBlock.Instrs = append(epiBlock.Instrs, createEpilogue(callees, info)...)
 
 	// Create function wrapper
 	ret := &Function{
@@ -93,19 +97,27 @@ func processFunction(fn *ir.Function, name string, ch chan *Function) {
 	ch <- ret
 }
 
-func populateParams(params []*ir.Register, info *functionInfo) {
+func populateParams(params []*ir.Register, info *functionInfo) []Instr {
+	var instrs []Instr
 	numReg := util.Min(len(params), maxRegisterParams)
 
 	// Partition register parameters (x0-x7) vs. stack parameters
 	regParams := params[:numReg]
 	stackParams := params[numReg:]
 
-	// Create name->register mappings for register parameters
+	// Move register parameters into temporary registers
 	for i, v := range regParams {
-		info.registers[v.Name] = &Register{
-			Name:    fmt.Sprintf("x%v", i),
-			Virtual: false,
+		dst := nextTempReg(info.registers)
+
+		mov := &MovInstr{
+			Dst: dst,
+			Src: findRegister(fmt.Sprintf("x%v", i), false, info),
 		}
+		addUses(mov)
+		instrs = append(instrs, mov)
+
+		//Create name->register mappings for register parameters
+		info.registers[v.Name] = dst
 	}
 
 	// Create name->offset mappings for stack parameters
@@ -115,6 +127,8 @@ func populateParams(params []*ir.Register, info *functionInfo) {
 			offset: paramOffset + i*dataSize,
 		}
 	}
+
+	return instrs
 }
 
 func populateLocals(allocs []*ir.AllocInstr, info *functionInfo) int {
@@ -953,7 +967,7 @@ func movLoadImmediate(dst *Register, lit *ir.Literal, info *functionInfo) (instr
 	return
 }
 
-func createPrologue(info *functionInfo, offset int) []Instr {
+func createPrologue(callees []*Register, info *functionInfo, offset int) []Instr {
 	// Store frame pointer and link register for safe keeping
 	store := &StorePairInstr{
 		Src1:      findRegister("fp", false, info),
@@ -970,7 +984,6 @@ func createPrologue(info *functionInfo, offset int) []Instr {
 		Src: findRegister("sp", false, info),
 	}
 	addUses(mov)
-
 	instrs := []Instr{store, mov}
 
 	// Optionally, decrement stack pointer to make space for stack variables
@@ -988,10 +1001,81 @@ func createPrologue(info *functionInfo, offset int) []Instr {
 		instrs = append(instrs, sub)
 	}
 
+	// Store callee-saved registers
+	return append(instrs, storeCallees(callees, info)...)
+}
+
+func storeCallees(callees []*Register, info *functionInfo) []Instr {
+	var instrs []Instr
+	offset := -16
+
+	for i := 0; i < len(callees); i += 2 {
+		// Get first stored source
+		src1 := callees[i]
+		var src2 *Register
+
+		// Get second stored source (if it exists) or use the first source otherwise
+		if i+1 < len(callees) {
+			src2 = callees[i+1]
+		} else {
+			src2 = src1
+		}
+
+		// Store pair of callee-saved registers to the stack
+		store := &StorePairInstr{
+			Src1:   src1,
+			Src2:   src2,
+			Base:   findRegister("fp", false, info),
+			Offset: offset,
+		}
+		addUses(store)
+		instrs = append(instrs, store)
+
+		offset -= 16
+	}
+
 	return instrs
 }
 
-func createEpilogue(info *functionInfo) []Instr {
+func loadCallees(callees []*Register, info *functionInfo) []Instr {
+	var instrs []Instr
+	offset := -16
+
+	for i := 0; i < len(callees); i += 2 {
+		// Get first load destination
+		dst1 := callees[i]
+
+		var load Instr
+		if i+1 < len(callees) {
+			// If a second load destination exists, load pair of callee-saved registers
+			load = &LoadPairInstr{
+				Dst1:   dst1,
+				Dst2:   callees[i+1],
+				Base:   findRegister("fp", false, info),
+				Offset: offset,
+			}
+
+		} else {
+			// Otherwise, load the single callee-saved register
+			load = &LoadInstr{
+				Dst:    dst1,
+				Base:   findRegister("fp", false, info),
+				Offset: offset + dataSize,
+			}
+		}
+		addUses(load)
+		instrs = append(instrs, load)
+
+		offset -= 16
+	}
+
+	return instrs
+}
+
+func createEpilogue(callees []*Register, info *functionInfo) []Instr {
+	// Load callee-saved registers
+	instrs := loadCallees(callees, info)
+
 	// Restore stack pointer (so it mirrors the frame pointer)
 	mov := &MovInstr{
 		Dst: findRegister("sp", false, info),
@@ -1012,7 +1096,7 @@ func createEpilogue(info *functionInfo) []Instr {
 	// Use a return instruction to leave subroutine
 	ret := &RetInstr{}
 
-	return []Instr{mov, load, ret}
+	return append(instrs, mov, load, ret)
 }
 
 func findRegister(name string, virtual bool, info *functionInfo) *Register {
@@ -1157,4 +1241,8 @@ func populatePhysicalRegs(info *functionInfo) (genRegs []*Register, specRegs map
 	}
 
 	return
+}
+
+func findCallees(genRegs []*Register) []*Register {
+	return genRegs[:genRegsCallerStart]
 }
