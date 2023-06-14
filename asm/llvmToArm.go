@@ -64,8 +64,16 @@ func processFunction(fn *ir.Function, name string, ch chan *Function) {
 		processBlock(irBlock, armBlock, info)
 	}
 
+	// Create parameter block
+	paramBlock := &Block{
+		Label:  "." + name + "_param",
+		Instrs: paramInstrs,
+		Next:   []*Block{blocks[0]},
+	}
+	blocks[0].Prev = append(blocks[0].Prev, paramBlock)
+
 	// Allocate physical registers
-	allocateRegisters(blocks[0], genRegs, specRegs)
+	allocateRegisters(paramBlock, genRegs, specRegs)
 
 	// Get callee register slice
 	callees := findCallees(genRegs)
@@ -80,10 +88,9 @@ func processFunction(fn *ir.Function, name string, ch chan *Function) {
 	proBlock := &Block{
 		Label:  name,
 		Instrs: createPrologue(callees, info, stackPointerOffset),
-		Next:   []*Block{blocks[0]},
+		Next:   []*Block{paramBlock},
 	}
-	proBlock.Instrs = append(proBlock.Instrs, paramInstrs...)
-	blocks[0].Prev = append(blocks[0].Prev, proBlock)
+	proBlock.Prev = append(proBlock.Prev, paramBlock)
 
 	// Add epilogue instructions to return block
 	epiBlock := info.epiBlock
@@ -91,7 +98,7 @@ func processFunction(fn *ir.Function, name string, ch chan *Function) {
 
 	// Create function wrapper
 	ret := &Function{
-		Blocks: []*Block{proBlock},
+		Blocks: []*Block{proBlock, paramBlock},
 	}
 	ret.Blocks = append(ret.Blocks, blocks...)
 
@@ -282,6 +289,30 @@ func loadGlobalToArm(dst *Register, glob *ir.Register, info *functionInfo) []Ins
 	return []Instr{adrp, load}
 }
 
+func globalAddrToArm(dst *Register, glob *ir.Register, info *functionInfo) []Instr {
+	// Create temporary base register to hold page address
+	base := nextTempReg(info.registers)
+
+	// Get page aligned-address of global
+	label := globals[glob.Name]
+	adrp := &PageAddressInstr{
+		Dst:   base,
+		Label: label,
+	}
+	addUses(adrp)
+
+	// Add page offset to get global address
+	add := &ArithInstr{
+		Operator:   AddOperator,
+		Dst:        dst,
+		Src1:       base,
+		PageOffset: label,
+	}
+	addUses(add)
+
+	return []Instr{adrp, add}
+}
+
 func storeInstrToArm(st *ir.StoreInstr, info *functionInfo) []Instr {
 	var instrs []Instr
 	var src *Register
@@ -398,6 +429,12 @@ func callInstrToArm(call *ir.CallInstr, info *functionInfo) []Instr {
 		case *ir.Register:
 			// Handle scanf calls separately by adding an offset to an existing pointer
 			if call.FnName == "scanf" {
+				// Check if the load is from a global
+				if v.Global {
+					instrs = append(instrs, globalAddrToArm(dst, v, info)...)
+					continue
+				}
+
 				baseInstrs, base, offset := getLoadStoreBase(v, info)
 				instrs = append(instrs, baseInstrs...)
 
@@ -715,18 +752,6 @@ func binaryInstrToArm(bin *ir.BinaryInstr, info *functionInfo) []Instr {
 
 	var setInstrs []Instr
 
-	// Handle first operand (always move or load immediates)
-	var src1 *Register
-	switch v := op1.(type) {
-	case *ir.Register:
-		setInstrs, src1 = useLoadRegister(v.Name, info)
-	case *ir.Literal:
-		// TODO: Add some cases here because ARM doesn't allow using xzr with a immediate for
-		// add, sub, mul, and sdiv. Cursed.
-		setInstrs, src1 = zeroMovLoadImmediate(nil, v, info)
-	}
-	instrs = append(instrs, setInstrs...)
-
 	// Handle second operand
 	var src2 Operand
 	switch v := op2.(type) {
@@ -752,6 +777,32 @@ func binaryInstrToArm(bin *ir.BinaryInstr, info *functionInfo) []Instr {
 	}
 	instrs = append(instrs, setInstrs...)
 
+	// Handle first operand (always move or load immediates)
+	var src1 *Register
+	switch v := op1.(type) {
+	case *ir.Register:
+		setInstrs, src1 = useLoadRegister(v.Name, info)
+
+	case *ir.Literal:
+		useZero := true
+
+		// Avoid using xzr for the first operand in certain instructions
+		// when the second operand is an immediate
+		switch bin.Operator {
+		case ir.AddOperator, ir.SubOperator, ir.MulOperator, ir.DivOperator:
+			if _, ok := src2.(*Immediate); ok {
+				useZero = false
+			}
+		}
+
+		if useZero {
+			setInstrs, src1 = zeroMovLoadImmediate(nil, v, info)
+		} else {
+			setInstrs, src1 = movLoadImmediate(nil, v, info)
+		}
+	}
+	instrs = append(instrs, setInstrs...)
+
 	// Create arithmetic instruction
 	arith := &ArithInstr{
 		Operator: operatorToArm(bin.Operator),
@@ -766,7 +817,7 @@ func binaryInstrToArm(bin *ir.BinaryInstr, info *functionInfo) []Instr {
 
 func convInstrToArm(conv *ir.ConvInstr, info *functionInfo) []Instr {
 	// Map target name to source register
-	info.registers[conv.Target.Name] = findRegister(conv.Src.(*ir.Register).Name, false, info)
+	info.registers[conv.Target.Name] = findRegister(conv.Src.(*ir.Register).Name, true, info)
 	return nil
 }
 
@@ -1124,6 +1175,9 @@ func addUses(instr Instr) {
 	// Append instruction to uses for each register source
 	for _, v := range instr.getSrcs() {
 		if reg, ok := v.(*Register); ok {
+			if reg == nil {
+				fmt.Printf("NIL! %v\n", instr)
+			}
 			reg.Uses = append(reg.Uses, instr)
 		}
 	}

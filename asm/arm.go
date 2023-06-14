@@ -210,10 +210,11 @@ func (p PageAddressInstr) String() string {
 }
 
 type ArithInstr struct {
-	Operator Operator
-	Dst      *Register
-	Src1     *Register
-	Src2     Operand
+	Operator   Operator
+	Dst        *Register
+	Src1       *Register
+	Src2       Operand
+	PageOffset string
 }
 
 func (a ArithInstr) getDsts() []*Register {
@@ -225,7 +226,14 @@ func (a ArithInstr) getSrcs() []Operand {
 }
 
 func (a ArithInstr) String() string {
-	return fmt.Sprintf("%v %v, %v, %v", a.Operator, a.Dst, a.Src1, a.Src2)
+	var src2Str string
+	if a.PageOffset != "" {
+		src2Str = fmt.Sprintf("#:lo12:%v", a.PageOffset)
+	} else {
+		src2Str = fmt.Sprintf("%v", a.Src2)
+	}
+
+	return fmt.Sprintf("%v %v, %v, %v", a.Operator, a.Dst, a.Src1, src2Str)
 }
 
 type CompInstr struct {

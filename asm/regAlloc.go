@@ -475,8 +475,13 @@ func colorVirtual(graph map[*Register]*node, stack []*node,
 	ret = make(map[*Register]*Register, len(stack))
 
 	// "Pop" nodes from stack
+	for _, v := range stack {
+		fmt.Printf("STACK %v\n", v)
+	}
+
 	for i := len(stack) - 1; i >= 0; i-- {
 		n := stack[i]
+		fmt.Printf("POPPING %v\n", n)
 
 		// Attempt to color node
 		c, err := colorNode(n, colors)
