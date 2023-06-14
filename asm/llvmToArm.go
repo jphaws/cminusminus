@@ -452,7 +452,7 @@ func callInstrToArm(call *ir.CallInstr, info *functionInfo) []Instr {
 				// For all other calls, just load the appropriate argument register
 			} else {
 				var argInstrs []Instr
-				argInstrs, _ = movLoadRegister(dst, v.Name, false, info)
+				argInstrs, _ = movLoadRegister(dst, v.Name, true, info)
 				instrs = append(instrs, argInstrs...)
 			}
 
