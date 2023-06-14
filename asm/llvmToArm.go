@@ -83,6 +83,7 @@ func processFunction(fn *ir.Function, name string, ch chan *Function) {
 		Next:   []*Block{blocks[0]},
 	}
 	proBlock.Instrs = append(proBlock.Instrs, paramInstrs...)
+	blocks[0].Prev = append(blocks[0].Prev, proBlock)
 
 	// Add epilogue instructions to return block
 	epiBlock := info.epiBlock
@@ -159,8 +160,10 @@ func collectBlock(b *ir.Block, info *functionInfo) []*Block {
 			blocks = append(blocks, collectBlock(b.Next, info)...)
 		}
 
-		// Add next block to ARM block successors
-		curr.Next = append(curr.Next, info.blockMap[b.Next])
+		// Add next block to ARM block successors (and link this block as a predecessor)
+		nextArm := info.blockMap[b.Next]
+		curr.Next = append(curr.Next, nextArm)
+		nextArm.Prev = append(nextArm.Prev, curr)
 	}
 
 	// Process else block (if it exists)
@@ -170,7 +173,9 @@ func collectBlock(b *ir.Block, info *functionInfo) []*Block {
 		}
 
 		// Add else block to ARM block successors
-		curr.Next = append(curr.Next, info.blockMap[b.Els])
+		nextArm := info.blockMap[b.Els]
+		curr.Next = append(curr.Next, nextArm)
+		nextArm.Prev = append(nextArm.Prev, curr)
 	}
 
 	return blocks
@@ -179,7 +184,7 @@ func collectBlock(b *ir.Block, info *functionInfo) []*Block {
 func processBlock(irBlock *ir.Block, armBlock *Block, info *functionInfo) {
 	// Translate phi instructions to ARM
 	for _, v := range irBlock.Phis {
-		armBlock.Instrs = phiInstrToArm(v, info)
+		armBlock.Instrs = append(armBlock.Instrs, phiInstrToArm(v, info)...)
 	}
 
 	// Translate all (non-magic) LLVM instructions to ARM

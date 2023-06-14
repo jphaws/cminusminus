@@ -11,6 +11,7 @@ type Block struct {
 	PhiOuts   []Instr
 	Terminals []Instr
 	Next      []*Block
+	Prev      []*Block
 }
 
 // === Instructions ===

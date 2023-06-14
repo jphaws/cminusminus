@@ -68,14 +68,16 @@ func (n *node) String() string {
 type graphInfo struct {
 	graph     map[*Register]*node
 	workGraph map[*Register]*node
-	colors    map[*Register]*Register // TODO: Necessary?
 }
 
 func allocateRegisters(curr *Block, colors []*Register, ignored map[*Register]bool) {
-	ranges := map[*Block]rangeSets{}
+	ranges := map[*Block]*rangeSets{}
 
 	// Create range sets
 	createGenRemove(curr, ranges, ignored)
+
+	// Create liveouts
+	createLiveout(ranges)
 
 	fmt.Printf("=== Range sets ===\n")
 	for k, v := range ranges {
@@ -104,10 +106,13 @@ func allocateRegisters(curr *Block, colors []*Register, ignored map[*Register]bo
 	}
 }
 
-func createGenRemove(curr *Block, ranges map[*Block]rangeSets, ignored map[*Register]bool) {
+func createGenRemove(curr *Block, ranges map[*Block]*rangeSets, ignored map[*Register]bool) {
 	fmt.Printf("curr: %v\n", curr.Label)
 	for _, v := range curr.Next {
 		fmt.Printf("    next: %v\n", v.Label)
+	}
+	for _, v := range curr.Prev {
+		fmt.Printf("    prev: %v\n", v.Label)
 	}
 
 	// Create range sets for the current block
@@ -129,7 +134,7 @@ func createGenRemove(curr *Block, ranges map[*Block]rangeSets, ignored map[*Regi
 	}
 
 	// Insert range sets (also marks this block as visited)
-	ranges[curr] = rangeSets{
+	ranges[curr] = &rangeSets{
 		genSet:    genSet,
 		removeSet: removeSet,
 		liveout:   liveout,
@@ -141,24 +146,6 @@ func createGenRemove(curr *Block, ranges map[*Block]rangeSets, ignored map[*Regi
 		if _, ok := ranges[next]; !ok {
 			createGenRemove(next, ranges, ignored)
 		}
-
-		// Goal: get genSet U (liveout - removeSet) for next block (set arithmetic)
-		// Then union that expression from the next block into the current liveout
-		nextLive := map[*Register]struct{}{}
-		nr := ranges[next]
-
-		// Calculate (liveout - removeSet)
-		for reg := range nr.liveout {
-			if _, present := nr.removeSet[reg]; !present {
-				nextLive[reg] = struct{}{}
-			}
-		}
-
-		// Union (liveout - removeSet) into current liveout
-		maps.Copy(liveout, nextLive)
-
-		// Union genSet into current liveout
-		maps.Copy(liveout, nr.genSet)
 	}
 }
 
@@ -201,8 +188,89 @@ func processInstrGenRemove(instr Instr, genSet map[*Register]struct{},
 	}
 }
 
+func createLiveout(ranges map[*Block]*rangeSets) {
+	// Create working block set
+	workSet := make(map[*Block]struct{}, len(ranges))
+
+	// Initially add all blocks to the working set
+	for v := range ranges {
+		workSet[v] = struct{}{}
+	}
+
+	// Process the work set until it's empty
+	for len(workSet) > 0 {
+		// Pop a random block from the work set
+		var curr *Block
+		for curr = range workSet {
+			break
+		}
+		delete(workSet, curr)
+
+		// Compute new liveout
+		newLiveout := map[*Register]struct{}{}
+		oldLiveout := ranges[curr].liveout
+
+		var changed bool
+		for _, next := range curr.Next {
+			changed = changed || unionLiveoutNext(ranges[next], newLiveout, oldLiveout)
+		}
+
+		// Check if length of liveout has changed (and mark as changed if so)
+		if len(newLiveout) != len(oldLiveout) {
+			changed = true
+		}
+
+		// Set new liveout
+		ranges[curr].liveout = newLiveout
+
+		// Add predecessor blocks to the work set if the current block's liveout changed
+		if changed {
+			for _, b := range curr.Prev {
+				workSet[b] = struct{}{}
+			}
+		}
+	}
+}
+
+func unionLiveoutNext(rng *rangeSets, newLiveout map[*Register]struct{},
+	oldLiveout map[*Register]struct{}) bool {
+
+	// Main goal: get genSet U (liveout - removeSet) for some block (set arithmetic)
+	// Then union that expression into the previous block's liveout
+	// So liveout = U{for all successors} (genSet U (liveout - removeSet))
+	liveRem := map[*Register]struct{}{}
+
+	// First, calculate (liveout - removeSet)
+	for reg := range rng.liveout {
+		if _, present := rng.removeSet[reg]; !present {
+			liveRem[reg] = struct{}{}
+		}
+	}
+
+	// Then, union (liveout - removeSet) into previous liveout
+	var changed bool
+	for reg := range liveRem {
+		if _, present := oldLiveout[reg]; !present {
+			changed = true
+		}
+
+		newLiveout[reg] = struct{}{}
+	}
+
+	// Union genSet into previous liveout
+	for reg := range rng.genSet {
+		if _, present := oldLiveout[reg]; !present {
+			changed = true
+		}
+
+		newLiveout[reg] = struct{}{}
+	}
+
+	return changed
+}
+
 func createInterfGraph(curr *Block, colors []*Register,
-	ranges map[*Block]rangeSets, ignored map[*Register]bool) map[*Register]*node {
+	ranges map[*Block]*rangeSets, ignored map[*Register]bool) map[*Register]*node {
 
 	// Create graph map
 	graph := map[*Register]*node{}
@@ -248,6 +316,11 @@ func processBlockInterf(curr *Block, livenow map[*Register]struct{},
 		processInstrInterf(curr.Instrs[i], livenow, graph, colors, ignored)
 	}
 
+	// Add remaining livenow registers to graph
+	for reg := range livenow {
+		findNode(reg, graph)
+	}
+
 	fmt.Println()
 }
 
@@ -267,6 +340,7 @@ func processInstrInterf(instr Instr, livenow map[*Register]struct{},
 
 	// For each instruction target...
 	for _, dst := range targets {
+		fmt.Println(dst)
 		// Ignore special registers
 		if ignored[dst] {
 			continue
@@ -281,6 +355,7 @@ func processInstrInterf(instr Instr, livenow map[*Register]struct{},
 			n.addNeighbor(reg, findNode(reg, graph))
 		}
 
+		// TODO: Needed? Why is this here?
 		graph[dst] = n
 	}
 
@@ -291,6 +366,7 @@ func processInstrInterf(instr Instr, livenow map[*Register]struct{},
 
 	// Add instruction sources to livenow
 	for _, src := range instr.getSrcs() {
+		fmt.Println(src)
 		if reg, ok := src.(*Register); ok {
 			// Ignore special registers
 			if ignored[reg] {
