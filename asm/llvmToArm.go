@@ -46,7 +46,7 @@ func processFunction(fn *ir.Function, name string, ch chan *Function) {
 	}
 
 	// Pre-populate general registers
-	genRegs := populateGeneralRegs(info)
+	genRegs, specRegs := populatePhysicalRegs(info)
 
 	// Pre-populate register and stack maps with parameters
 	populateParams(fn.Parameters, info)
@@ -82,7 +82,7 @@ func processFunction(fn *ir.Function, name string, ch chan *Function) {
 	epiBlock.Instrs = append(epiBlock.Instrs, createEpilogue(info)...)
 
 	// TODO: Use allocateRegisters
-	allocateRegisters(proBlock, genRegs)
+	allocateRegisters(proBlock, genRegs, specRegs)
 
 	// Create function wrapper
 	ret := &Function{
@@ -702,6 +702,8 @@ func binaryInstrToArm(bin *ir.BinaryInstr, info *functionInfo) []Instr {
 	case *ir.Register:
 		setInstrs, src1 = useLoadRegister(v.Name, info)
 	case *ir.Literal:
+		// TODO: Add some cases here because ARM doesn't allow using xzr with a immediate for
+		// add, sub, mul, and sdiv. Cursed.
 		setInstrs, src1 = zeroMovLoadImmediate(nil, v, info)
 	}
 	instrs = append(instrs, setInstrs...)
@@ -1095,35 +1097,45 @@ func operatorToArm(op ir.Operator) Operator {
 	panic("Unsupported operator")
 }
 
-func populateGeneralRegs(info *functionInfo) []*Register {
+const genRegsCallerStart = 10
+
+func populatePhysicalRegs(info *functionInfo) (genRegs []*Register, specRegs map[*Register]bool) {
 	// Create general register list
-	genRegs := []*Register{
-		&Register{Name: "x0"}, // Parameters (x0-x7)
-		&Register{Name: "x1"},
-		&Register{Name: "x2"},
-		&Register{Name: "x3"},
-		&Register{Name: "x4"},
-		&Register{Name: "x5"},
-		&Register{Name: "x6"},
-		&Register{Name: "x7"},
-		&Register{Name: "x8"}, // Syscall number
-		&Register{Name: "x9"}, // Caller save (x9-x15)
-		&Register{Name: "x10"},
-		&Register{Name: "x11"},
-		&Register{Name: "x12"},
-		&Register{Name: "x13"},
-		&Register{Name: "x14"},
-		&Register{Name: "x15"}, // No x16-x18
-		&Register{Name: "x19"}, // Callee save (x19-x28)
-		&Register{Name: "x20"},
-		&Register{Name: "x21"},
-		&Register{Name: "x22"},
-		&Register{Name: "x23"},
-		&Register{Name: "x24"},
-		&Register{Name: "x25"},
-		&Register{Name: "x26"},
-		&Register{Name: "x27"},
-		&Register{Name: "x28"},
+	// The first registers in the list are more favored during register allocation
+	genRegs = []*Register{
+		// Callee save (x19-x28)
+		{Name: "x28"},
+		{Name: "x27"},
+		{Name: "x26"},
+		{Name: "x25"},
+		{Name: "x24"},
+		{Name: "x23"},
+		{Name: "x22"},
+		{Name: "x21"},
+		{Name: "x20"},
+		{Name: "x19"},
+
+		// Caller save (x9-x15)
+		{Name: "x15"},
+		{Name: "x14"},
+		{Name: "x13"},
+		{Name: "x12"},
+		{Name: "x11"},
+		{Name: "x10"},
+		{Name: "x9"},
+
+		// Syscall number
+		{Name: "x8"},
+
+		// Parameters (x0-x7)
+		{Name: "x7"},
+		{Name: "x6"},
+		{Name: "x5"},
+		{Name: "x4"},
+		{Name: "x3"},
+		{Name: "x2"},
+		{Name: "x1"},
+		{Name: "x0"},
 	}
 
 	// Add general registers to register map
@@ -1131,5 +1143,18 @@ func populateGeneralRegs(info *functionInfo) []*Register {
 		info.registers[reg.Name] = reg
 	}
 
-	return genRegs
+	// Create special register map
+	specRegs = map[*Register]bool{
+		{Name: "fp"}:  true, // Frame pointer (x29)
+		{Name: "lr"}:  true, // Link register (x30)
+		{Name: "sp"}:  true, // Stack pointer (x31, depending on context)
+		{Name: "xzr"}: true, // Zero register (x31, depending)
+	}
+
+	// Add special registers to register map
+	for reg := range specRegs {
+		info.registers[reg.Name] = reg
+	}
+
+	return
 }
