@@ -1,7 +1,5 @@
 package asm
 
-// TODO: Remove debug statements
-
 import (
 	"fmt"
 	"strings"
@@ -79,25 +77,10 @@ func allocateRegisters(curr *Block, colors []*Register, ignored map[*Register]bo
 	// Create liveouts
 	createLiveout(ranges)
 
-	fmt.Printf("=== Range sets ===\n")
-	for k, v := range ranges {
-		fmt.Printf("%v:\n", k.Label)
-		fmt.Printf("    genSet: %v\n", v.genSet)
-		fmt.Printf("    removeSet: %v\n", v.removeSet)
-		fmt.Printf("    liveout: %v\n", v.liveout)
-	}
-	fmt.Println()
-
-	fmt.Printf("=== Bulding interference... ===\n")
+	// Create interference graph from liveouts
 	graph := createInterfGraph(curr, colors, ranges, ignored)
-	fmt.Println()
 
-	fmt.Printf("=== Final interference graph ===\n")
-	for _, v := range graph {
-		fmt.Print(v)
-	}
-	fmt.Println()
-
+	// Create register->color (color being a fancy word for physical register) mapping
 	coloring, _ := colorGraph(graph, colors)
 
 	// TODO: Make this better?
@@ -107,14 +90,6 @@ func allocateRegisters(curr *Block, colors []*Register, ignored map[*Register]bo
 }
 
 func createGenRemove(curr *Block, ranges map[*Block]*rangeSets, ignored map[*Register]bool) {
-	fmt.Printf("curr: %v\n", curr.Label)
-	for _, v := range curr.Next {
-		fmt.Printf("    next: %v\n", v.Label)
-	}
-	for _, v := range curr.Prev {
-		fmt.Printf("    prev: %v\n", v.Label)
-	}
-
 	// Create range sets for the current block
 	genSet := map[*Register]struct{}{}
 	removeSet := map[*Register]struct{}{}
@@ -257,7 +232,7 @@ func unionLiveoutNext(rng *rangeSets, newLiveout map[*Register]struct{},
 		newLiveout[reg] = struct{}{}
 	}
 
-	// Union genSet into previous liveout
+	// Now, union genSet into previous liveout
 	for reg := range rng.genSet {
 		if _, present := oldLiveout[reg]; !present {
 			changed = true
@@ -275,16 +250,6 @@ func createInterfGraph(curr *Block, colors []*Register,
 	// Create graph map
 	graph := map[*Register]*node{}
 
-	// Pre-populate graph with nodes for physical registers
-	/* TODO: Remove? Unnecessary?
-	for _, reg := range colors {
-		graph[reg] = &node{
-			reg:       reg,
-			neighbors: map[*Register]*node{},
-		}
-	}
-	*/
-
 	// Process interference within each block
 	for b, sets := range ranges {
 		processBlockInterf(b, sets.liveout, graph, colors, ignored)
@@ -296,32 +261,23 @@ func createInterfGraph(curr *Block, colors []*Register,
 func processBlockInterf(curr *Block, livenow map[*Register]struct{},
 	graph map[*Register]*node, colors []*Register, ignored map[*Register]bool) {
 
-	fmt.Printf("Processing interference for block: %v\n", curr.Label)
-	// Copy liveout as livenow
-	fmt.Printf("Initial livenow: %v\n", livenow)
-
 	// Add interference for each instruction (bottom to top)
 	for i := len(curr.Terminals) - 1; i >= 0; i-- {
-		fmt.Printf("Instr: %v\n", curr.Terminals[i])
 		processInstrInterf(curr.Terminals[i], livenow, graph, colors, ignored)
 	}
 
 	for i := len(curr.PhiOuts) - 1; i >= 0; i-- {
-		fmt.Printf("Instr: %v\n", curr.PhiOuts[i])
 		processInstrInterf(curr.PhiOuts[i], livenow, graph, colors, ignored)
 	}
 
 	for i := len(curr.Instrs) - 1; i >= 0; i-- {
-		fmt.Printf("Instr: %v\n", curr.Instrs[i])
 		processInstrInterf(curr.Instrs[i], livenow, graph, colors, ignored)
 	}
 
-	// Add remaining livenow registers to graph
+	// Add remaining livenow registers to graph (required to capture some disconnected nodes)
 	for reg := range livenow {
 		findNode(reg, graph)
 	}
-
-	fmt.Println()
 }
 
 func processInstrInterf(instr Instr, livenow map[*Register]struct{},
@@ -333,6 +289,7 @@ func processInstrInterf(instr Instr, livenow map[*Register]struct{},
 		// For branch and link instructions, use all caller saved registers (x0-x15)
 		// These registers may be overwritten during the subroutine call
 		targets = colors[genRegsCallerStart:]
+
 	} else {
 		// For all others, just use their own targets
 		targets = instr.getDsts()
@@ -340,18 +297,16 @@ func processInstrInterf(instr Instr, livenow map[*Register]struct{},
 
 	// For each instruction target...
 	for _, dst := range targets {
-		fmt.Println(dst)
 		// Ignore special registers
 		if ignored[dst] {
 			continue
 		}
 
-		fmt.Printf("    Target: %v\n", dst)
+		// Get its node in the graph
 		n := findNode(dst, graph)
 
 		// Add interference edge with all livenow registers
 		for reg := range livenow {
-			fmt.Printf("        Adding interf w/: %v\n", reg)
 			n.addNeighbor(reg, findNode(reg, graph))
 		}
 
@@ -366,29 +321,25 @@ func processInstrInterf(instr Instr, livenow map[*Register]struct{},
 
 	// Add instruction sources to livenow
 	for _, src := range instr.getSrcs() {
-		fmt.Println(src)
 		if reg, ok := src.(*Register); ok {
 			// Ignore special registers
 			if ignored[reg] {
 				continue
 			}
-			fmt.Printf("    Src: %v\n", reg)
+
 			livenow[reg] = struct{}{}
 		}
 	}
-
-	fmt.Printf("Livenow: %v\n", livenow)
-	fmt.Println()
 }
 
 func colorGraph(graph map[*Register]*node,
 	colors []*Register) (ret map[*Register]*Register, err error) {
 
-	// Make a working copy of the interference graph
+	// Make a working copy of the interference graph (nodes will be removed from the working copy)
 	workGraph := maps.Clone(graph)
 
 	for _, n := range graph {
-		// Make a working copy of each node's neighbors
+		// Make a working copy of each node's neighbors (again, working neighbors will be removed)
 		n.workNeighbors = map[*node]struct{}{}
 
 		for _, neigh := range n.neighbors {
@@ -401,23 +352,12 @@ func colorGraph(graph map[*Register]*node,
 
 	// Push virtual nodes into a stack
 	stack := pushNodes(workGraph, len(colors))
-	fmt.Printf("Stack: %v\n", stack)
 
 	// Pre-color physical nodes
 	colorPhysical(graph, colors)
 
 	// Pop and color virtual nodes
 	ret, err = colorVirtual(graph, stack, colors)
-
-	fmt.Printf("=== Colored interference graph ===\n")
-	for _, v := range graph {
-		fmt.Print(v)
-	}
-	fmt.Println()
-
-	fmt.Printf("=== Color maps ===\n")
-	fmt.Println(ret)
-
 	return
 }
 
@@ -441,8 +381,7 @@ func pushNodes(wg map[*Register]*node, maxDegree int) []*node {
 			// Remove node from its neighbors' maps
 			node.removeFromWorkNeighbors()
 
-			// Push node to the stack and remove from working graph
-			// fmt.Printf("Remove: %v", node) // TODO: Remove me
+			// Push (virtual) nodes to the stack and remove from working graph
 			if node.reg.Virtual {
 				stack = append(stack, node)
 			}
@@ -475,16 +414,13 @@ func colorVirtual(graph map[*Register]*node, stack []*node,
 	ret = make(map[*Register]*Register, len(stack))
 
 	// "Pop" nodes from stack
-	for _, v := range stack {
-		fmt.Printf("STACK %v\n", v)
-	}
-
 	for i := len(stack) - 1; i >= 0; i-- {
 		n := stack[i]
-		fmt.Printf("POPPING %v\n", n)
 
 		// Attempt to color node
 		c, err := colorNode(n, colors)
+
+		// TODO: Move this up the call chain
 		if err != nil {
 			panic(err)
 		}

@@ -1175,9 +1175,6 @@ func addUses(instr Instr) {
 	// Append instruction to uses for each register source
 	for _, v := range instr.getSrcs() {
 		if reg, ok := v.(*Register); ok {
-			if reg == nil {
-				fmt.Printf("NIL! %v\n", instr)
-			}
 			reg.Uses = append(reg.Uses, instr)
 		}
 	}

@@ -6,7 +6,10 @@ compiler-project-c
 graph.dot
 graph.pdf
 out.ll
+out.s
+out.o
 a.out
+bin.elf
 func.sh
 
 # Binaries for programs and plugins
