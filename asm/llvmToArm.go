@@ -37,7 +37,7 @@ type stackOffset struct {
 	offset int
 }
 
-func processFunction(fn *ir.Function, name string, ch chan *Function) {
+func processFunction(fn *ir.Function, name string, doRegAlloc bool, ch chan *Function) {
 	info := &functionInfo{
 		blockMap:  map[*ir.Block]*Block{},
 		registers: map[string]*Register{},
@@ -72,12 +72,15 @@ func processFunction(fn *ir.Function, name string, ch chan *Function) {
 	}
 	blocks[0].Prev = append(blocks[0].Prev, paramBlock)
 
-	// Allocate physical registers
-	allocateRegisters(paramBlock, genRegs, specRegs)
+	// Allocate physical registers (unless not requested)
+	var callees []*Register
+	if doRegAlloc {
+		allocateRegisters(paramBlock, genRegs, specRegs)
 
-	// Get callee register slice
-	callees := findCallees(genRegs)
-	stackPointerOffset += len(callees) * dataSize
+		// Get callee register slice
+		callees = findCallees(genRegs)
+		stackPointerOffset += len(callees) * dataSize
+	}
 
 	// Rectify stack pointer to a 16-byte boundary
 	if stackPointerOffset%16 != 0 {

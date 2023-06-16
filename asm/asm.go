@@ -80,7 +80,7 @@ func (b *Block) toAsm() string {
 	return ret
 }
 
-func CreateAsm(program *ir.ProgramIr) *ProgramAsm {
+func CreateAsm(program *ir.ProgramIr, doRegAlloc bool) *ProgramAsm {
 	funcChan := make(chan *Function)
 
 	// Populate globals map
@@ -95,7 +95,7 @@ func CreateAsm(program *ir.ProgramIr) *ProgramAsm {
 
 	// Create a Go routine for each function
 	for k, v := range program.Functions {
-		go processFunction(v, k, funcChan)
+		go processFunction(v, k, doRegAlloc, funcChan)
 	}
 
 	// Synchronize completed routines

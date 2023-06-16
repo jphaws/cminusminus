@@ -99,7 +99,7 @@ func main() {
 
 		// Generate assembly output
 	} else {
-		asm := asm.CreateAsm(rep)
+		asm := asm.CreateAsm(rep, opts.regAlloc)
 		output = asm.ToAsm()
 	}
 
@@ -119,6 +119,7 @@ func main() {
 type Options struct {
 	outputFile  string
 	llvm        bool
+	regAlloc    bool
 	graph       bool
 	defUse      bool
 	stackIr     bool
@@ -143,6 +144,8 @@ func parseArgs() (opts Options, args []string) {
 		"use a stack-based intermediate representation")
 	flags.BoolVar(&opts.llvm, "llvm", false,
 		"output the LLVM intermediate representation")
+	flags.BoolVar(&opts.regAlloc, "reg-alloc", true,
+		"perform register allocation")
 	flags.BoolVar(&opts.graph, "graph", false,
 		"output an IR control flow graph in the dot language")
 	flags.BoolVar(&opts.defUse, "def-use", false,
