@@ -311,9 +311,6 @@ func processInstrInterf(instr Instr, livenow map[*Register]struct{},
 		for reg := range livenow {
 			n.addNeighbor(reg, findNode(reg, graph))
 		}
-
-		// TODO: Needed? Why is this here?
-		graph[dst] = n
 	}
 
 	// Remove instruction targets from livenow
@@ -420,7 +417,8 @@ func colorVirtual(graph map[*Register]*node, stack []*node,
 		n := stack[i]
 
 		// Attempt to color node
-		c, err := colorNode(n, colors)
+		var c *Register
+		c, err = colorNode(n, colors)
 
 		// TODO: Move this up the call chain
 		if err != nil {
