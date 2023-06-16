@@ -75,10 +75,15 @@ func processFunction(fn *ir.Function, name string, doRegAlloc bool, ch chan *Fun
 	// Allocate physical registers (unless not requested)
 	var callees []*Register
 	if doRegAlloc {
-		allocateRegisters(paramBlock, genRegs, specRegs)
+		coloring := allocateRegisters(paramBlock, genRegs, specRegs)
+
+		// TODO: Make this better?
+		for old, nw := range coloring {
+			old.Name = nw.Name
+		}
 
 		// Get callee register slice
-		callees = findCallees(genRegs)
+		callees = findCallees(coloring, genRegs)
 		stackPointerOffset += len(callees) * dataSize
 	}
 
@@ -1240,6 +1245,7 @@ func operatorToArm(op ir.Operator) Operator {
 	panic("Unsupported operator")
 }
 
+const genRegsCalleeEnd = 10
 const genRegsCallerStart = 10
 
 func populatePhysicalRegs(info *functionInfo) (genRegs []*Register, specRegs map[*Register]bool) {
@@ -1302,6 +1308,27 @@ func populatePhysicalRegs(info *functionInfo) (genRegs []*Register, specRegs map
 	return
 }
 
-func findCallees(genRegs []*Register) []*Register {
-	return genRegs[:genRegsCallerStart]
+func findCallees(usedRegs map[*Register]*Register, genRegs []*Register) []*Register {
+	// Create set of all callee registers
+	callees := make(map[*Register]bool, genRegsCalleeEnd)
+	for _, reg := range genRegs[:genRegsCalleeEnd] {
+		callees[reg] = true
+	}
+
+	// Set all used callee registers to "false" in the map (but don't remove them)
+	for _, reg := range usedRegs {
+		if callees[reg] {
+			callees[reg] = false
+		}
+	}
+
+	// Collect all false (used) callee registers
+	var ret []*Register
+	for reg := range callees {
+		if value, ok := callees[reg]; ok && !value {
+			ret = append(ret, reg)
+		}
+	}
+
+	return ret
 }

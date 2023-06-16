@@ -68,7 +68,9 @@ type graphInfo struct {
 	workGraph map[*Register]*node
 }
 
-func allocateRegisters(curr *Block, colors []*Register, ignored map[*Register]bool) {
+func allocateRegisters(curr *Block, colors []*Register,
+	ignored map[*Register]bool) map[*Register]*Register {
+
 	ranges := map[*Block]*rangeSets{}
 
 	// Create range sets
@@ -81,12 +83,12 @@ func allocateRegisters(curr *Block, colors []*Register, ignored map[*Register]bo
 	graph := createInterfGraph(curr, colors, ranges, ignored)
 
 	// Create register->color (color being a fancy word for physical register) mapping
-	coloring, _ := colorGraph(graph, colors)
-
-	// TODO: Make this better?
-	for old, nw := range coloring {
-		old.Name = nw.Name
+	coloring, err := colorGraph(graph, colors)
+	if err != nil {
+		panic(err) // Spills not supported at the moment
 	}
+
+	return coloring
 }
 
 func createGenRemove(curr *Block, ranges map[*Block]*rangeSets, ignored map[*Register]bool) {
@@ -420,9 +422,8 @@ func colorVirtual(graph map[*Register]*node, stack []*node,
 		var c *Register
 		c, err = colorNode(n, colors)
 
-		// TODO: Move this up the call chain
 		if err != nil {
-			panic(err)
+			return
 		}
 
 		// Save coloring in final map
@@ -448,7 +449,7 @@ func colorNode(nod *node, colors []*Register) (reg *Register, err error) {
 	}
 
 	// If no colors available, return an error
-	err = fmt.Errorf("Node %v triggered spill", nod.reg)
+	err = fmt.Errorf("Node %v triggered spill (not supported)", nod.reg)
 	return
 }
 
