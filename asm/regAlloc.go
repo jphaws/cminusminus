@@ -198,8 +198,10 @@ func createLiveout(ranges map[*Block]*rangeSets) {
 		// Set new liveout
 		ranges[curr].liveout = newLiveout
 
-		// Add predecessor blocks to the work set if the current block's liveout changed
+		// Add current and predecessor blocks to the work set if the current block's liveout changed
 		if changed {
+			workSet[curr] = struct{}{}
+
 			for _, b := range curr.Prev {
 				workSet[b] = struct{}{}
 			}
