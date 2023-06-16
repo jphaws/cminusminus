@@ -20,7 +20,8 @@ cleanup='true'
 compile='compile_via_arm'
 stack=''
 const_prop=''
-trivial=''
+phi=''
+mov=''
 useless=''
 ret=0
 all='true'
@@ -76,7 +77,7 @@ compile_mini() {
 
     # Compile Mini
     set +e
-    "$MC" -o "$output" $llvm_arg $stack $const_prop $trivial $useless "$mini" 2>> "$LOG_FILE"
+    "$MC" -o "$output" $llvm_arg $stack $const_prop $phi $mov $useless "$mini" 2>> "$LOG_FILE"
 	if [ "$?" -ne 0 ]; then
         print_error "$1" "Mini compilation failed"
         set -e
@@ -198,7 +199,8 @@ usage() {
     printf -- '  %-24s %s\n' '-s, --stack' 'compile using stack-based IR' >&2
     printf -- '  %-24s %s\n' '-c, --no-const-prop' 'disable constant propagation' >&2
     printf -- '  %-24s %s\n' '-u, --no-useless-elim' 'disable useless code elimination' >&2
-    printf -- '  %-24s %s\n' '-t, --no-trivial-phi' 'disable trivial phi removal' >&2
+    printf -- '  %-24s %s\n' '-p, --no-trivial-phi' 'disable trivial phi removal' >&2
+    printf -- '  %-24s %s\n' '-m, --trivial-mov' 'enable trivial move removal' >&2
 }
 
 # Handle any arguments
@@ -229,8 +231,12 @@ for arg in "$@"; do
 			useless='--useless-elim=false'
 			;;
 
-		'-t' | '--no-trivial-phi')
-			trivial='--trivial-phi=false'
+		'-p' | '--no-trivial-phi')
+			phi='--trivial-phi=false'
+			;;
+
+		'-m' | '--trivial-mov')
+			mov='--trivial-mov=true'
 			;;
 
 		'-'*)

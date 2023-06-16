@@ -37,7 +37,9 @@ type stackOffset struct {
 	offset int
 }
 
-func processFunction(fn *ir.Function, name string, doRegAlloc bool, ch chan *Function) {
+func processFunction(fn *ir.Function, name string,
+	doRegAlloc bool, doTrivialMov bool, ch chan *Function) {
+
 	info := &functionInfo{
 		blockMap:  map[*ir.Block]*Block{},
 		registers: map[string]*Register{},
@@ -77,10 +79,8 @@ func processFunction(fn *ir.Function, name string, doRegAlloc bool, ch chan *Fun
 	if doRegAlloc {
 		coloring := allocateRegisters(paramBlock, genRegs, specRegs)
 
-		// TODO: Make this better?
-		for old, nw := range coloring {
-			old.Name = nw.Name
-		}
+		// Update virtual registers to be physical registers
+		updateVirtuals(coloring)
 
 		// Get callee register slice
 		callees = findCallees(coloring, genRegs)
@@ -109,6 +109,11 @@ func processFunction(fn *ir.Function, name string, doRegAlloc bool, ch chan *Fun
 		Blocks: []*Block{proBlock, paramBlock},
 	}
 	ret.Blocks = append(ret.Blocks, blocks...)
+
+	// Remove trivial moves (unless not requested)
+	if doTrivialMov {
+		removeTrivialMovs(ret.Blocks)
+	}
 
 	ch <- ret
 }
@@ -1331,4 +1336,13 @@ func findCallees(usedRegs map[*Register]*Register, genRegs []*Register) []*Regis
 	}
 
 	return ret
+}
+
+func updateVirtuals(coloring map[*Register]*Register) {
+	for old, nw := range coloring {
+		// Replace virtual registers in all instructions that use them
+		for _, instr := range old.Uses {
+			instr.replaceRegs(old, nw)
+		}
+	}
 }

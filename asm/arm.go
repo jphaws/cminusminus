@@ -18,6 +18,7 @@ type Block struct {
 type Instr interface {
 	getDsts() []*Register
 	getSrcs() []Operand
+	replaceRegs(old *Register, nw *Register)
 }
 
 type MovInstr struct {
@@ -25,12 +26,22 @@ type MovInstr struct {
 	Src Operand
 }
 
-func (m MovInstr) getDsts() []*Register {
+func (m *MovInstr) getDsts() []*Register {
 	return []*Register{m.Dst}
 }
 
-func (m MovInstr) getSrcs() []Operand {
+func (m *MovInstr) getSrcs() []Operand {
 	return []Operand{m.Src}
+}
+
+func (m *MovInstr) replaceRegs(old *Register, nw *Register) {
+	if m.Dst == old {
+		m.Dst = nw
+	}
+
+	if reg, ok := m.Src.(*Register); ok && reg == old {
+		m.Src = nw
+	}
 }
 
 func (m MovInstr) String() string {
@@ -45,12 +56,22 @@ type LoadInstr struct {
 	Increment  Increment
 }
 
-func (l LoadInstr) getDsts() []*Register {
+func (l *LoadInstr) getDsts() []*Register {
 	return []*Register{l.Dst}
 }
 
-func (l LoadInstr) getSrcs() []Operand {
+func (l *LoadInstr) getSrcs() []Operand {
 	return []Operand{l.Base}
+}
+
+func (l *LoadInstr) replaceRegs(old *Register, nw *Register) {
+	if l.Dst == old {
+		l.Dst = nw
+	}
+
+	if l.Base == old {
+		l.Base = nw
+	}
 }
 
 func (l LoadInstr) String() string {
@@ -78,12 +99,18 @@ type LoadImmediateInstr struct {
 	Imm *Immediate
 }
 
-func (l LoadImmediateInstr) getDsts() []*Register {
+func (l *LoadImmediateInstr) getDsts() []*Register {
 	return []*Register{l.Dst}
 }
 
-func (l LoadImmediateInstr) getSrcs() []Operand {
+func (l *LoadImmediateInstr) getSrcs() []Operand {
 	return nil
+}
+
+func (l *LoadImmediateInstr) replaceRegs(old *Register, nw *Register) {
+	if l.Dst == old {
+		l.Dst = nw
+	}
 }
 
 func (l LoadImmediateInstr) String() string {
@@ -98,12 +125,26 @@ type LoadPairInstr struct {
 	Increment Increment
 }
 
-func (l LoadPairInstr) getDsts() []*Register {
+func (l *LoadPairInstr) getDsts() []*Register {
 	return []*Register{l.Dst1, l.Dst2}
 }
 
-func (l LoadPairInstr) getSrcs() []Operand {
+func (l *LoadPairInstr) getSrcs() []Operand {
 	return []Operand{l.Base}
+}
+
+func (l *LoadPairInstr) replaceRegs(old *Register, nw *Register) {
+	if l.Dst1 == old {
+		l.Dst1 = nw
+	}
+
+	if l.Dst1 == old {
+		l.Dst1 = nw
+	}
+
+	if l.Base == old {
+		l.Base = nw
+	}
 }
 
 func (l LoadPairInstr) String() string {
@@ -131,12 +172,22 @@ type StoreInstr struct {
 	Increment  Increment
 }
 
-func (s StoreInstr) getDsts() []*Register {
+func (s *StoreInstr) getDsts() []*Register {
 	return nil
 }
 
-func (s StoreInstr) getSrcs() []Operand {
+func (s *StoreInstr) getSrcs() []Operand {
 	return []Operand{s.Src, s.Base}
+}
+
+func (s *StoreInstr) replaceRegs(old *Register, nw *Register) {
+	if s.Src == old {
+		s.Src = nw
+	}
+
+	if s.Base == old {
+		s.Base = nw
+	}
 }
 
 func (s StoreInstr) String() string {
@@ -167,12 +218,26 @@ type StorePairInstr struct {
 	Increment Increment
 }
 
-func (s StorePairInstr) getDsts() []*Register {
+func (s *StorePairInstr) getDsts() []*Register {
 	return nil
 }
 
-func (s StorePairInstr) getSrcs() []Operand {
+func (s *StorePairInstr) getSrcs() []Operand {
 	return []Operand{s.Src1, s.Src2, s.Base}
+}
+
+func (s *StorePairInstr) replaceRegs(old *Register, nw *Register) {
+	if s.Src1 == old {
+		s.Src1 = nw
+	}
+
+	if s.Src2 == old {
+		s.Src2 = nw
+	}
+
+	if s.Base == old {
+		s.Base = nw
+	}
 }
 
 func (s StorePairInstr) String() string {
@@ -197,12 +262,18 @@ type PageAddressInstr struct {
 	Label string
 }
 
-func (p PageAddressInstr) getDsts() []*Register {
+func (p *PageAddressInstr) getDsts() []*Register {
 	return []*Register{p.Dst}
 }
 
-func (p PageAddressInstr) getSrcs() []Operand {
+func (p *PageAddressInstr) getSrcs() []Operand {
 	return nil
+}
+
+func (p *PageAddressInstr) replaceRegs(old *Register, nw *Register) {
+	if p.Dst == old {
+		p.Dst = nw
+	}
 }
 
 func (p PageAddressInstr) String() string {
@@ -217,12 +288,26 @@ type ArithInstr struct {
 	PageOffset string
 }
 
-func (a ArithInstr) getDsts() []*Register {
+func (a *ArithInstr) getDsts() []*Register {
 	return []*Register{a.Dst}
 }
 
-func (a ArithInstr) getSrcs() []Operand {
+func (a *ArithInstr) getSrcs() []Operand {
 	return []Operand{a.Src1, a.Src2}
+}
+
+func (a *ArithInstr) replaceRegs(old *Register, nw *Register) {
+	if a.Dst == old {
+		a.Dst = nw
+	}
+
+	if a.Src1 == old {
+		a.Src1 = nw
+	}
+
+	if reg, ok := a.Src2.(*Register); ok && reg == old {
+		a.Src2 = nw
+	}
 }
 
 func (a ArithInstr) String() string {
@@ -241,12 +326,22 @@ type CompInstr struct {
 	Op2 Operand
 }
 
-func (c CompInstr) getDsts() []*Register {
+func (c *CompInstr) getDsts() []*Register {
 	return nil
 }
 
-func (c CompInstr) getSrcs() []Operand {
+func (c *CompInstr) getSrcs() []Operand {
 	return []Operand{c.Op1, c.Op2}
+}
+
+func (c *CompInstr) replaceRegs(old *Register, nw *Register) {
+	if c.Op1 == old {
+		c.Op1 = nw
+	}
+
+	if reg, ok := c.Op2.(*Register); ok && reg == old {
+		c.Op2 = nw
+	}
 }
 
 func (c CompInstr) String() string {
@@ -258,12 +353,22 @@ type TestInstr struct {
 	Op2 Operand
 }
 
-func (t TestInstr) getDsts() []*Register {
+func (t *TestInstr) getDsts() []*Register {
 	return nil
 }
 
-func (t TestInstr) getSrcs() []Operand {
+func (t *TestInstr) getSrcs() []Operand {
 	return []Operand{t.Op1, t.Op2}
+}
+
+func (t *TestInstr) replaceRegs(old *Register, nw *Register) {
+	if t.Op1 == old {
+		t.Op1 = nw
+	}
+
+	if reg, ok := t.Op2.(*Register); ok && reg == old {
+		t.Op2 = nw
+	}
 }
 
 func (t TestInstr) String() string {
@@ -275,12 +380,18 @@ type ConditionalSetInstr struct {
 	Condition Condition
 }
 
-func (c ConditionalSetInstr) getDsts() []*Register {
+func (c *ConditionalSetInstr) getDsts() []*Register {
 	return []*Register{c.Dst}
 }
 
-func (c ConditionalSetInstr) getSrcs() []Operand {
+func (c *ConditionalSetInstr) getSrcs() []Operand {
 	return nil
+}
+
+func (c *ConditionalSetInstr) replaceRegs(old *Register, nw *Register) {
+	if c.Dst == old {
+		c.Dst = nw
+	}
 }
 
 func (c ConditionalSetInstr) String() string {
@@ -292,13 +403,15 @@ type BranchInstr struct {
 	Block     *Block
 }
 
-func (b BranchInstr) getDsts() []*Register {
+func (b *BranchInstr) getDsts() []*Register {
 	return nil
 }
 
-func (b BranchInstr) getSrcs() []Operand {
+func (b *BranchInstr) getSrcs() []Operand {
 	return nil
 }
+
+func (b *BranchInstr) replaceRegs(old *Register, nw *Register) {}
 
 func (b BranchInstr) String() string {
 	var cond string
@@ -313,13 +426,15 @@ type BranchLinkInstr struct {
 	Label string
 }
 
-func (b BranchLinkInstr) getDsts() []*Register {
+func (b *BranchLinkInstr) getDsts() []*Register {
 	return nil
 }
 
-func (b BranchLinkInstr) getSrcs() []Operand {
+func (b *BranchLinkInstr) getSrcs() []Operand {
 	return nil
 }
+
+func (b *BranchLinkInstr) replaceRegs(old *Register, nw *Register) {}
 
 func (b BranchLinkInstr) String() string {
 	return fmt.Sprintf("bl %v", b.Label)
@@ -327,13 +442,15 @@ func (b BranchLinkInstr) String() string {
 
 type RetInstr struct{}
 
-func (m RetInstr) getDsts() []*Register {
+func (r *RetInstr) getDsts() []*Register {
 	return nil
 }
 
-func (m RetInstr) getSrcs() []Operand {
+func (r *RetInstr) getSrcs() []Operand {
 	return nil
 }
+
+func (r *RetInstr) replaceRegs(old *Register, nw *Register) {}
 
 func (m RetInstr) String() string {
 	return "ret"

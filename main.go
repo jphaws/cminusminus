@@ -97,9 +97,9 @@ func main() {
 	} else if opts.llvm {
 		output = rep.ToLlvm()
 
-		// Generate assembly output
 	} else {
-		asm := asm.CreateAsm(rep, opts.regAlloc)
+		// Generate assembly output
+		asm := asm.CreateAsm(rep, opts.regAlloc, opts.trivialMov)
 		output = asm.ToAsm()
 	}
 
@@ -126,6 +126,7 @@ type Options struct {
 	constProp   bool
 	trivialPhi  bool
 	uselessElim bool
+	trivialMov  bool
 }
 
 func parseArgs() (opts Options, args []string) {
@@ -156,6 +157,8 @@ func parseArgs() (opts Options, args []string) {
 		"run trivial phi removal optimization")
 	flags.BoolVar(&opts.uselessElim, "useless-elim", true,
 		"run useless code elimination optimization")
+	flags.BoolVar(&opts.trivialMov, "trivial-mov", false,
+		"run trivial move removal optimization")
 
 	// Parse flags
 	err := flags.Parse(os.Args[1:])
