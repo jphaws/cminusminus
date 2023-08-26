@@ -20,12 +20,12 @@ $ go build    # To build the compiler
 
 The compiler binary is statically linked and can be run directly.
 ```sh
-$ ./compiler-project-c --help    # To get usage details
+$ ./cminusminus --help    # To get usage details
 ```
 
 Use `-o <outfile>` to direct output to a file, as shown:
 ```sh
-$ ./compiler-project-c -o asm.s source.mini    # To compile Mini to assembly
+$ ./cminusminus -o asm.s source.mini    # To compile Mini to assembly
 ```
 
 Setting `--stack` directs the compiler to use stack-based IR (instead of
@@ -33,11 +33,11 @@ register-based IR). In the same manner, passing `--llvm` tells the compiler to
 output the LLVM intermediate representation instead of translating fully to ARM
 assembly. See the help output for more command-line flags.
 ```sh
-$ ./compiler-project-c --stack -o asm.s source.mini    # To use stack-based IR
+$ ./cminusminus --stack -o asm.s source.mini    # To use stack-based IR
 
-$ ./compiler-project-c --llvm -o llvm.ll source.mini    # To output LLVM instead of assembly
+$ ./cminusminus --llvm -o llvm.ll source.mini    # To output LLVM instead of assembly
 
-$ ./compiler-project-c --const-prop=false --trivial-mov=true    # To toggle optimizations
+$ ./cminusminus --const-prop=false --trivial-mov=true    # To toggle optimizations
 ```
 
 ## Dependencies

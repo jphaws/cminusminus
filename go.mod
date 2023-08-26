@@ -1,4 +1,4 @@
-module github.com/keen-cp/compiler-project-c
+module github.com/jphaws/cminusminus
 
 go 1.20
 

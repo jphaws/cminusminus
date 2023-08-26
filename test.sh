@@ -4,7 +4,7 @@
 set -eu
 trap cleanup HUP INT QUIT ABRT
 
-MC='./compiler-project-c'
+MC='./cminusminus'
 BENCHMARKS_DIR='mini/benchmarks'
 INPUT='input'
 INPUT_LONGER='input.longer'

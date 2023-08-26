@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/keen-cp/compiler-project-c/ir"
-	"github.com/keen-cp/compiler-project-c/opt"
-	"github.com/keen-cp/compiler-project-c/util"
+	"github.com/jphaws/cminusminus/ir"
+	"github.com/jphaws/cminusminus/opt"
+	"github.com/jphaws/cminusminus/util"
 )
 
 // === Structs ===

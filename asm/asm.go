@@ -3,7 +3,7 @@ package asm
 import (
 	"fmt"
 
-	"github.com/keen-cp/compiler-project-c/ir"
+	"github.com/jphaws/cminusminus/ir"
 )
 
 type ProgramAsm struct {

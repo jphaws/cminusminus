@@ -1,7 +1,7 @@
 package ir
 
 import (
-	"github.com/keen-cp/compiler-project-c/ast"
+	"github.com/jphaws/cminusminus/ast"
 )
 
 // === Statements ===

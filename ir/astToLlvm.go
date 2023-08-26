@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/keen-cp/compiler-project-c/ast"
+	"github.com/jphaws/cminusminus/ast"
 )
 
 const (

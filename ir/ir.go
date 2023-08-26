@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/keen-cp/compiler-project-c/ast"
+	"github.com/jphaws/cminusminus/ast"
 
 	om "github.com/wk8/go-ordered-map/v2"
 )

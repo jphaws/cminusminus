@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/keen-cp/compiler-project-c/ir"
-	"github.com/keen-cp/compiler-project-c/util"
+	"github.com/jphaws/cminusminus/ir"
+	"github.com/jphaws/cminusminus/util"
 )
 
 const (

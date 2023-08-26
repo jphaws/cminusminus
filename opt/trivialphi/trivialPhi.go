@@ -3,8 +3,8 @@ package trivialphi // Mini
 import (
 	"sync"
 
-	"github.com/keen-cp/compiler-project-c/ir"
-	"github.com/keen-cp/compiler-project-c/opt"
+	"github.com/jphaws/cminusminus/ir"
+	"github.com/jphaws/cminusminus/opt"
 )
 
 func RemoveTrivialPhis(p *ir.ProgramIr) {

@@ -1,4 +1,34 @@
+struct C {
+   int fielda;
+   bool fieldb;
+};
+
+struct R {
+   int fielda;
+   bool fieldb;
+};
+
 fun main() void {
-   a = 1;
-   x.y.z = 999;
+   int a;
+   bool b;
+   struct C s;
+
+   a = ((1 + 2) / 6) * 9;
+
+   # a = 11;
+   # x.y.z = 999;
+
+   # s.fieldb = - ( - true);
+   # s.fieldb = ! testFun(5, true, s);
+   if (s != s) {
+      a = 5;
+   }
+   while (a && b) {
+      a = 5;
+   }
+}
+
+fun testFun(int a, bool b, struct C c) void {
+   # a = testFun(true, 0, 0);
+   return;
 }

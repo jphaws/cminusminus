@@ -2,8 +2,8 @@ package parser // Mini
 
 import (
 	"github.com/antlr/antlr4/runtime/Go/antlr/v4"
-	"github.com/keen-cp/compiler-project-c/ast"
-	"github.com/keen-cp/compiler-project-c/parser/mantlr"
+	"github.com/jphaws/cminusminus/ast"
+	"github.com/jphaws/cminusminus/parser/mantlr"
 )
 
 // === Root ===

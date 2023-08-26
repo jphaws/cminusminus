@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/keen-cp/compiler-project-c/color"
+	"github.com/jphaws/cminusminus/color"
 
 	om "github.com/wk8/go-ordered-map/v2"
 )

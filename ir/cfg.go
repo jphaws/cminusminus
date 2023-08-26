@@ -3,7 +3,7 @@ package ir // Mini
 import (
 	"fmt"
 
-	"github.com/keen-cp/compiler-project-c/ast"
+	"github.com/jphaws/cminusminus/ast"
 )
 
 type Block struct {
